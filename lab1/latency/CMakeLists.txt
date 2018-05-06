@@ -1,10 +1,14 @@
 cmake_minimum_required(VERSION 3.10)
-project(mpi-test)
-add_subdirectory(lab1)
+
+project(latency)
+
+find_package(MPI REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 
 set(CMAKE_C_COMPILER mpicc)
 set(CMAKE_CXX_COMPILER mpic++)
 
-add_executable(mpi-test main.cpp)
+set(SOURCE_FILES latency.cpp)
+
+add_executable(latency ${SOURCE_FILES})
