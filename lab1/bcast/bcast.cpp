@@ -2,7 +2,7 @@
 // Created by Дмитрий Бутилов on 06.05.18.
 //
 #include <mpi.h>
-#include <cstdio>
+#include <iostream>
 
 int currentRank, size;
 
@@ -37,7 +37,7 @@ void Bcast(int repeats) {
     if (currentRank == 0) {
         timeBcast += MPI_Wtime() - startTime;
     }
-    printf("Bcast: %f Send_Recv: %f Repeats: %d \n", timeBcast, timeSR, repeats);
+    std::cout << "Bcast: " << timeBcast << " Send_Recv: " << timeSR << " Repeats: " << repeats << "\n";
 }
 
 int main(int argc, char **argv) {
@@ -49,13 +49,13 @@ int main(int argc, char **argv) {
 
     int BCastReps = 100000;
     if (currentRank == 0) {
-        printf("Start\n");
+        std::cout << "Start\n";
     }
     time = MPI_Wtime();
     Bcast(BCastReps);
     time = MPI_Wtime() - time;
     if (currentRank == 0) {
-        printf("End in %f seconds\n", time);
+        std::cout << "End\nTime: " << time << " seconds\n";
     }
 
     MPI_Finalize();

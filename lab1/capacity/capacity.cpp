@@ -2,8 +2,7 @@
 // Created by Дмитрий Бутилов on 06.05.18.
 //
 #include <mpi.h>
-#include <cstdio>
-#include <cstdlib>
+#include <iostream>
 
 int currentRank, size;
 
@@ -26,11 +25,9 @@ void Capacity(int repeats, int lenght) {
     }
     free(message);
     if (currentRank == 0) {
-
         double res = 2.0 * repeats;
-        printf("%.0f", res);
         auto resultCapacity = 2.0 * repeats * lenght / time;
-        printf("Capasity: %.0f bs, Repeats: %d , Lenght: = %d b\n", resultCapacity, repeats, lenght);
+        std::cout << "Capasity: " << resultCapacity << "\nRepeats: " << repeats << "\nLenght: = " << lenght << "\n";
     }
 }
 
@@ -44,13 +41,13 @@ int main(int argc, char **argv) {
     int capacityRepeats = 10000;
     int capacitySize = 8 * 1024 * 1024;
     if (currentRank == 0) {
-        printf("Start\n");
+        std::cout << "Start\n";
     }
     time = MPI_Wtime();
     Capacity(capacityRepeats, capacitySize);
     time = MPI_Wtime() - time;
     if (currentRank == 0) {
-        printf("Ends in %f seconds\n", time);
+        std::cout << "End\nTime: " << time << " seconds\n";
     }
 
     MPI_Finalize();

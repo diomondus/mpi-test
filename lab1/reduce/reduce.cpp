@@ -3,6 +3,7 @@
 //
 #include <mpi.h>
 #include <cstdio>
+#include <iostream>
 
 int currentRank, size;
 
@@ -39,8 +40,7 @@ int Reduce(int repeats) {
     if (currentRank == 0) {
         timeReduce += MPI_Wtime() - startTime;
     }
-    printf("Reduce: %f Send_Recv: %f Repeats: %d \n", timeReduce, timeSR, repeats);
-    MPI_Finalize();
+    std::cout << "Reduce: " << timeReduce << "\nSend_Recv: " << timeSR << "\nRepeats: " << repeats << "\n";
     return 0;
 }
 
@@ -53,13 +53,13 @@ int main(int argc, char **argv) {
 
     int ReduceRepeats = 50;
     if (currentRank == 0) {
-        printf("Start\n");
+        std::cout << "Start\n";
     }
     time = MPI_Wtime();
     Reduce(ReduceRepeats);
     time = MPI_Wtime() - time;
     if (currentRank == 0) {
-        printf("Ends in %f seconds\n", time);
+        std::cout << "End\nTime: " << time << " seconds\n";
     }
 
     MPI_Finalize();

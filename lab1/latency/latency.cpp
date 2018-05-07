@@ -2,7 +2,7 @@
 // Created by Дмитрий Бутилов on 06.05.18.
 //
 #include <mpi.h>
-#include <cstdio>
+#include <iostream>
 
 int currentRank, size;
 
@@ -23,8 +23,9 @@ void Latency(int repeats) {
         }
     }
     time = time / (2.0 * repeats);
-    if (currentRank == 0)
-        printf("Latency: %2.8f s; Repeats: %d \n", time, repeats);
+    if (currentRank == 0) {
+        std::cout << "     Latency: " << time << " s\n     Repeats: " << repeats << "\n";
+    }
 }
 
 int main(int argc, char **argv) {
@@ -36,13 +37,13 @@ int main(int argc, char **argv) {
 
     int latencyRepeats = 100000;
     if (currentRank == 0) {
-        printf("Start\n");
+        std::cout << "Start\n";
     }
     time = MPI_Wtime();
     Latency(latencyRepeats);
     time = MPI_Wtime() - time;
     if (currentRank == 0) {
-        printf("Ends in %f seconds\n", time);
+        std::cout << "End\nTime: " << time << " seconds\n";
     }
 
     MPI_Finalize();
