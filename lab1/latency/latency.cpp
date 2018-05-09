@@ -4,48 +4,47 @@
 #include <mpi.h>
 #include <iostream>
 
-int currentRank, size;
+int rank, size;
 
-void Latency(int repeats) {
-    MPI_Status state;
+void Latency(int latencyRepeats) {
+    MPI_Status mpiStatus;
     double time = 0;
-    for (int t = 0; t < repeats; t++) {
-        if (currentRank == 0) {
-            for (int i = 1; i < size; i++) {
+    for (int i = 0; i < latencyRepeats; i++) {
+        if (rank == 0) {
+            for (int j = 1; j < size; j++) {
                 double startTime = MPI_Wtime();
-                MPI_Send(nullptr, 0, MPI_BYTE, i, 1, MPI_COMM_WORLD);
-                MPI_Recv(nullptr, 0, MPI_BYTE, i, 2, MPI_COMM_WORLD, &state);
+                MPI_Send(nullptr, 0, MPI_BYTE, j, 1, MPI_COMM_WORLD);
+                MPI_Recv(nullptr, 0, MPI_BYTE, j, 2, MPI_COMM_WORLD, &mpiStatus);
                 time += MPI_Wtime() - startTime;
             }
         } else {
-            MPI_Recv(nullptr, 0, MPI_BYTE, 0, 1, MPI_COMM_WORLD, &state);
+            MPI_Recv(nullptr, 0, MPI_BYTE, 0, 1, MPI_COMM_WORLD, &mpiStatus);
             MPI_Send(nullptr, 0, MPI_BYTE, 0, 2, MPI_COMM_WORLD);
         }
     }
-    time = time / (2.0 * repeats);
-    if (currentRank == 0) {
-        std::cout << "     Latency: " << time << " s\n     Repeats: " << repeats << "\n";
+    double latencyTime = time / (2.0 * latencyRepeats); // T/2N
+    if (rank == 0) {
+        std::cout << "Latency: " << latencyTime << " s\nRepeats: " << latencyRepeats << "\n";
     }
 }
 
 int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &currentRank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    double time = 0;
-
-    int latencyRepeats = 100000;
-    if (currentRank == 0) {
+    int latencyRepeats = 10000;
+    if (rank == 0) {
         std::cout << "Start\n";
     }
-    time = MPI_Wtime();
-    Latency(latencyRepeats);
-    time = MPI_Wtime() - time;
-    if (currentRank == 0) {
-        std::cout << "End\nTime: " << time << " seconds\n";
-    }
 
+    double completeTime = MPI_Wtime();
+    Latency(latencyRepeats);
+    completeTime = MPI_Wtime() - completeTime;
+
+    if (rank == 0) {
+        std::cout << "End\nTime: " << completeTime << " seconds\n";
+    }
     MPI_Finalize();
     return 0;
 }

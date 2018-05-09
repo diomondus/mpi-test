@@ -4,12 +4,12 @@
 #include <mpi.h>
 #include <iostream>
 
-int currentRank, size;
+int rank, size;
 
 void Bcast(int repeats) {
     double timeBcast = 0, timeSR = 0;
     MPI_Status status;
-    if (currentRank == 0) {
+    if (rank == 0) {
         double startTime = MPI_Wtime();
         int sending;
         int destination;
@@ -27,14 +27,14 @@ void Bcast(int repeats) {
     }
     MPI_Barrier(MPI_COMM_WORLD);
     double startTime = 0;
-    if (currentRank == 0) {
+    if (rank == 0) {
         startTime = MPI_Wtime();
     }
     int sending;
     for (sending = 0; sending < repeats; ++sending) {
         MPI_Bcast(nullptr, 0, MPI_BYTE, 0, MPI_COMM_WORLD);
     }
-    if (currentRank == 0) {
+    if (rank == 0) {
         timeBcast += MPI_Wtime() - startTime;
     }
     std::cout << "Bcast: " << timeBcast << " Send_Recv: " << timeSR << " Repeats: " << repeats << "\n";
@@ -43,18 +43,18 @@ void Bcast(int repeats) {
 int main(int argc, char **argv) {
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
-    MPI_Comm_rank(MPI_COMM_WORLD, &currentRank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     double time = 0;
 
     int BCastReps = 100000;
-    if (currentRank == 0) {
+    if (rank == 0) {
         std::cout << "Start\n";
     }
     time = MPI_Wtime();
     Bcast(BCastReps);
     time = MPI_Wtime() - time;
-    if (currentRank == 0) {
+    if (rank == 0) {
         std::cout << "End\nTime: " << time << " seconds\n";
     }
 
