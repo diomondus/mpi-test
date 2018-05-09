@@ -6,7 +6,7 @@
 
 int rank, size;
 
-void Capacity(int repeats, int lenght) {
+void calculateCapacity(int repeats, int lenght) {
     double time = 0;
     auto *message = (unsigned char *) malloc(lenght * sizeof(unsigned char));
     MPI_Status state;
@@ -25,8 +25,8 @@ void Capacity(int repeats, int lenght) {
     }
     free(message);
     if (rank == 0) {
-        auto resultCapacity = 2.0 * repeats * lenght / time;
-        std::cout << "Capasity: " << resultCapacity << "\nRepeats: " << repeats << "\nLenght: = " << lenght << "\n";
+        auto resultCapacity = 2.0 * repeats * lenght / time; // C = 2N*L/T
+        std::cout << "Capacity: " << resultCapacity << "\nRepeats: " << repeats << "\nLenght: = " << lenght << "\n";
     }
 }
 
@@ -35,16 +35,16 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    double time = 0;
-
-    int capacityRepeats = 10000;
-    int capacitySize = 8 * 1024 * 1024;
+    int repeats = 10000;
+    int size = 8 * 1024 * 1024;
     if (rank == 0) {
         std::cout << "Start\n";
     }
-    time = MPI_Wtime();
-    Capacity(capacityRepeats, capacitySize);
+
+    double time = MPI_Wtime();
+    calculateCapacity(repeats, size);
     time = MPI_Wtime() - time;
+
     if (rank == 0) {
         std::cout << "End\nTime: " << time << " seconds\n";
     }

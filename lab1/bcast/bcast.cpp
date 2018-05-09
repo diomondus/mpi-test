@@ -6,23 +6,20 @@
 
 int rank, size;
 
-void Bcast(int repeats) {
-    double timeBcast = 0, timeSR = 0;
-    MPI_Status status;
+void compareSendReceiveAndBcast(int repeats) {
+    double sendReceiveTime = 0, bcastTime = 0;
+    MPI_Status mpiStatus;
     if (rank == 0) {
         double startTime = MPI_Wtime();
-        int sending;
-        int destination;
-        for (sending = 0; sending < repeats; ++sending) {
-            for (destination = 1; destination < size; ++destination) {
-                MPI_Send(nullptr, 0, MPI_BYTE, destination, 1, MPI_COMM_WORLD);
+        for (int i = 0; i < repeats; ++i) {
+            for (int j = 1; j < size; ++j) {
+                MPI_Send(nullptr, 0, MPI_BYTE, j, 1, MPI_COMM_WORLD);
             }
         }
-        timeSR += MPI_Wtime() - startTime;
+        sendReceiveTime += MPI_Wtime() - startTime;
     } else {
-        int sending;
-        for (sending = 0; sending < repeats; ++sending) {
-            MPI_Recv(nullptr, 0, MPI_BYTE, 0, 1, MPI_COMM_WORLD, &status);
+        for (int i = 0; i < repeats; ++i) {
+            MPI_Recv(nullptr, 0, MPI_BYTE, 0, 1, MPI_COMM_WORLD, &mpiStatus);
         }
     }
     MPI_Barrier(MPI_COMM_WORLD);
@@ -30,14 +27,13 @@ void Bcast(int repeats) {
     if (rank == 0) {
         startTime = MPI_Wtime();
     }
-    int sending;
-    for (sending = 0; sending < repeats; ++sending) {
+    for (int i = 0; i < repeats; ++i) {
         MPI_Bcast(nullptr, 0, MPI_BYTE, 0, MPI_COMM_WORLD);
     }
     if (rank == 0) {
-        timeBcast += MPI_Wtime() - startTime;
+        bcastTime += MPI_Wtime() - startTime;
     }
-    std::cout << "Bcast: " << timeBcast << " Send_Recv: " << timeSR << " Repeats: " << repeats << "\n";
+    std::cout << "Repeats: " << repeats << "\nSend/Recieve: " << sendReceiveTime << "\nBcast: " << bcastTime << "\n";
 }
 
 int main(int argc, char **argv) {
@@ -46,16 +42,17 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     double time = 0;
-
-    int BCastReps = 100000;
+    int repeats = 100000;
     if (rank == 0) {
         std::cout << "Start\n";
     }
+
     time = MPI_Wtime();
-    Bcast(BCastReps);
+    compareSendReceiveAndBcast(repeats);
     time = MPI_Wtime() - time;
+
     if (rank == 0) {
-        std::cout << "End\nTime: " << time << " seconds\n";
+        std::cout << "End\nTime: " << time << " s\n";
     }
 
     MPI_Finalize();

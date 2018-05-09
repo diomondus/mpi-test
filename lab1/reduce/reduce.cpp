@@ -2,46 +2,41 @@
 // Created by Дмитрий Бутилов on 06.05.18.
 //
 #include <mpi.h>
-#include <cstdio>
 #include <iostream>
 
 int rank, size;
 
-int Reduce(int repeats) {
-    MPI_Status status;
-    double timeSR = 0, timeReduce = 0;
+void compareSendReceiveAndReduce(int repeats) {
+    MPI_Status mpiStatus;
+    double sendReceiveTime = 0, reduceTime = 0;
     if (rank == 0) {
         char receive;
-        int sending;
         double startTime = MPI_Wtime();
-        for (sending = 0; sending < repeats; ++sending) {
-            int destination;
-            for (destination = 1; destination < size; ++destination) {
-                MPI_Recv(&receive, 1, MPI_BYTE, destination, 1, MPI_COMM_WORLD, &status);
+        for (int i = 0; i < repeats; ++i) {
+            for (int j = 1; j < size; ++j) {
+                MPI_Recv(&receive, 1, MPI_BYTE, j, 1, MPI_COMM_WORLD, &mpiStatus);
             }
         }
-        timeSR += MPI_Wtime() - startTime;
+        sendReceiveTime += MPI_Wtime() - startTime;
     } else {
-        int sending;
-        for (sending = 0; sending < repeats; ++sending) {
+        for (int i = 0; i < repeats; ++i) {
             MPI_Send(&rank, 1, MPI_BYTE, 0, 1, MPI_COMM_WORLD);
         }
     }
+
     MPI_Barrier(MPI_COMM_WORLD);
     double startTime = 0;
     if (rank == 0) {
         startTime = MPI_Wtime();
     }
     char receive = 0;
-    int sending;
-    for (sending = 0; sending < repeats; ++sending) {
+    for (int i = 0; i < repeats; ++i) {
         MPI_Reduce(&rank, &receive, 1, MPI_BYTE, MPI_SUM, 0, MPI_COMM_WORLD);
     }
     if (rank == 0) {
-        timeReduce += MPI_Wtime() - startTime;
+        reduceTime += MPI_Wtime() - startTime;
     }
-    std::cout << "Reduce: " << timeReduce << "\nSend_Recv: " << timeSR << "\nRepeats: " << repeats << "\n";
-    return 0;
+    std::cout << "Repeats: " << repeats << "\nSend/Recieve: " << sendReceiveTime << "\nReduce: " << reduceTime << "\n";
 }
 
 int main(int argc, char **argv) {
@@ -50,14 +45,15 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     double time = 0;
-
-    int ReduceRepeats = 50;
+    int repeats = 50;
     if (rank == 0) {
         std::cout << "Start\n";
     }
+
     time = MPI_Wtime();
-    Reduce(ReduceRepeats);
+    compareSendReceiveAndReduce(repeats);
     time = MPI_Wtime() - time;
+
     if (rank == 0) {
         std::cout << "End\nTime: " << time << " seconds\n";
     }

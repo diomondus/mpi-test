@@ -6,7 +6,7 @@
 
 int rank, size;
 
-void Latency(int latencyRepeats) {
+void calculateLatency(int latencyRepeats) {
     MPI_Status mpiStatus;
     double time = 0;
     for (int i = 0; i < latencyRepeats; i++) {
@@ -33,13 +33,13 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    int latencyRepeats = 10000;
+    int repeats = 10000;
     if (rank == 0) {
         std::cout << "Start\n";
     }
 
     double completeTime = MPI_Wtime();
-    Latency(latencyRepeats);
+    calculateLatency(repeats);
     completeTime = MPI_Wtime() - completeTime;
 
     if (rank == 0) {
