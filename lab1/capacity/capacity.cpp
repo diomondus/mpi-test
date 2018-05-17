@@ -35,14 +35,14 @@ int main(int argc, char **argv) {
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    int repeats = 10000;
-    int size = 8 * 1024 * 1024;
+    int repeats = 50;
+    int lenght = 8 * 1024 * 1024;
     if (rank == 0) {
         std::cout << "Start\n";
     }
 
     double time = MPI_Wtime();
-    calculateCapacity(repeats, size);
+    calculateCapacity(repeats, lenght);
     time = MPI_Wtime() - time;
 
     if (rank == 0) {
