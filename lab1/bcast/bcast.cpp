@@ -42,7 +42,7 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     double time = 0;
-    int repeats = 100000;
+    int repeats = 10000;
     if (rank == 0) {
         std::cout << "Start\n";
     }
