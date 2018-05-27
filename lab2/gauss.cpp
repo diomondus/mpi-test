@@ -1,7 +1,7 @@
 #include <mpi.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <math.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
 
 double *matrix, *vector, *result; //Основные данные. Заполняются через rand()
 double *matrixPart, *vectorPart, *resultPart, mess = 0.0; // Нарезка для данного процесса
@@ -9,13 +9,13 @@ int matrixSize, status, countStr; //размер матрицы, статус р
 int *numMainStr, *numMainStrIt; //ведущие строки для каждой итерации, номера итераций ведущих строк
 int size, currentRank, *mass1, *range;//Размер, ранг, рассылка, количество на каждый процесс
 
-void initIt() {
+void initMatrixAndVectors() {
     int balanceStr; //Число строк, ещё не распределённых по процессам
     if (currentRank == 0) //Заполняем
     {
         int show;
-        matrixSize = 10000;
-        show = 0;
+        matrixSize = 3;
+        show = 1;
         srand(0); //псевдослучайные
 
         matrix = new double[matrixSize * matrixSize];
@@ -39,7 +39,6 @@ void initIt() {
     //Определение размера части данных, расположенных на конкретном процессе
 
     balanceStr = matrixSize;
-
     for (int i = 0; i < currentRank; i++)
         balanceStr = balanceStr - balanceStr / (size - i);
 
@@ -59,8 +58,7 @@ void initIt() {
 //------------------------------------------------------------------------------
 
 // Распределение исходных данных между процессами
-
-void Raspred() {
+void disributeDataBetweenProcesses() {
     int *matrElem;             //Индекс первого элемента матрицы, передаваемого процессу
     int *matrRang;            //Число элементов матрицы, передаваемых процессу
     int sizestr;
@@ -239,18 +237,20 @@ void gaussRevert() {
 //------------------------------------------------------------------------------
 
 int main(int argc, char *argv[]) {
+    double startTime, time;
+
     printf("Start \n");
-    setvbuf(stdout, 0, _IONBF, 0);
+    setvbuf(stdout, 0, _IONBF, 0);   // режим доступа и размер буфера
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &currentRank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Barrier(MPI_COMM_WORLD);
 
-    double startTime, time;
+    initMatrixAndVectors();
+    disributeDataBetweenProcesses();
 
     MPI_Barrier(MPI_COMM_WORLD);
-    initIt();
-    Raspred();
-    MPI_Barrier(MPI_COMM_WORLD);
+
     startTime = MPI_Wtime();
 
     gauss();
@@ -278,6 +278,11 @@ int main(int argc, char *argv[]) {
     if (currentRank == 0) {
         printf("\n End");
     };
+
+    for (int i = 0; i < matrixSize; i++) {
+        printf("\nresult[%i]=%f", i, result[i]);
+    };
+
     MPI_Finalize();
 
     delete[] matrix;
