@@ -2,35 +2,40 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <ctime>
 
-bool usePrint = false;
+bool usePrint = true;
 
-double *matrix, *vector, *result; //Основные данные. Заполняются через rand()
+double *matrix, *vector, *result; // Основные данные. Заполняются через rand()
 
 double *matrixPart, *vectorPart, *resultPart, mess = 0.0; // Нарезка для данного процесса
 
-int matrixSize = 100, status, countStr; //размер матрицы, статус решения задачи, строки для текущего процесса
-int *numMainStr, *numMainStrIt; //ведущие строки для каждой итерации, номера итераций ведущих строк
-int size, currentRank, *mass1, *range;//Размер, ранг, рассылка, количество на каждый процесс
+int matrixSize = 100, status, countStr; // размер матрицы, статус решения задачи, строки для текущего процесса
+int *numMainStr, *numMainStrIt; // ведущие строки для каждой итерации, номера итераций ведущих строк
+int size, rank, *mass1, *range; // размер, ранг, рассылка, количество на каждый процесс
+
+double getRandomDouble() {
+    return rand() / 10000000.0;
+}
 
 void initMatrixAndVectors() {
-    int balanceStr; //Число строк, ещё не распределённых по процессам
-    if (currentRank == 0) //Заполняем
+    int balanceStr = 0; //Число строк, ещё не распределённых по процессам
+    if (rank == 0) //Заполняем
     {
-        srand(0); //псевдослучайные
+        srand(static_cast<unsigned int>(time(0))); //псевдослучайные
 
         matrix = new double[matrixSize * matrixSize];
         vector = new double[matrixSize];
         result = new double[matrixSize];
 
-        for (int i = 0; i < matrixSize * matrixSize; i++) {
-            matrix[i] = rand();
+        for (int i = 0; i < matrixSize * matrixSize; ++i) {
+            matrix[i] = getRandomDouble();
             if (usePrint) {
                 printf("\nA[%i]=%f", i, matrix[i]);
             }
         };
         for (int i = 0; i < matrixSize; i++) {
-            vector[i] = rand();
+            vector[i] = getRandomDouble();
             if (usePrint) {
                 printf("\nb[%i]=%f", i, vector[i]);
             }
@@ -42,11 +47,10 @@ void initMatrixAndVectors() {
 
     //Определение размера части данных, расположенных на конкретном процессе
 
-    balanceStr = matrixSize;
-    for (int i = 0; i < currentRank; i++)
-        balanceStr = balanceStr - balanceStr / (size - i);
+    for (int i = 0; i < rank; ++i)
+        balanceStr = matrixSize - matrixSize / (size - i);
 
-    countStr = balanceStr / (size - currentRank);
+    countStr = balanceStr / (size - rank);
     matrixPart = new double[countStr * matrixSize];//выделяем память под строки матрицы
     vectorPart = new double[countStr]; //память под элементы столбца свободных членов
     resultPart = new double[countStr]; //память под элементы вектора результата
@@ -87,7 +91,7 @@ void disributeDataBetweenProcesses() {
     };
 
     //Рассылка матрицы
-    MPI_Scatterv(matrix, matrRang, matrElem, MPI_DOUBLE, matrixPart, matrRang[currentRank], MPI_DOUBLE, 0,
+    MPI_Scatterv(matrix, matrRang, matrElem, MPI_DOUBLE, matrixPart, matrRang[rank], MPI_DOUBLE, 0,
                  MPI_COMM_WORLD);
 
 
@@ -103,7 +107,7 @@ void disributeDataBetweenProcesses() {
     };
 
     //Рассылка вектора
-    MPI_Scatterv(vector, range, mass1, MPI_DOUBLE, vectorPart, range[currentRank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(vector, range, mass1, MPI_DOUBLE, vectorPart, range[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
     status = 1;
     MPI_Bcast(&status, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&mess, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -113,7 +117,7 @@ void disributeDataBetweenProcesses() {
 
 //------------------------------------------------------------------------------
 
-void Raw(int numIter, double *glStr) {
+void Raw(int numIter, const double *glStr) {
     double koef;
     //для каждой строки в процессе
     for (int i = 0; i < countStr; i++) {
@@ -135,7 +139,7 @@ void gauss() {
     struct {
         double maxValue;
         int currentRank;
-    } localMax, glbMax; //максимальный элемент+номер процесса, у которого он
+    } localMax = {}, glbMax = {}; //максимальный элемент+номер процесса, у которого он
     double *glbWMatr = new double[matrixSize + 1]; //т.е. строка матрицы+значение вектора
     for (int i = 0; i < matrixSize; i++) {
         // Вычисление ведущей строки
@@ -146,36 +150,37 @@ void gauss() {
             if ((numMainStrIt[j] == -1) && (maxValue < fabs(matrixPart[i + matrixSize * j]))) {
                 maxValue = fabs(matrixPart[i + matrixSize * j]);
                 VedIndex = j;
-            };
-        };
+            }
+        }
 
         localMax.maxValue = maxValue;
-        localMax.currentRank = currentRank;
+        localMax.currentRank = rank;
 
         //каждый процесс рассылает свой локально максимальный элемент по всем столцам, все процесы принимают уже глобально максимальный элемент
         MPI_Allreduce(&localMax, &glbMax, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
 
         //Вычисление ведущей строки всей системы
-        if (currentRank == glbMax.currentRank) {
+        if (rank == glbMax.currentRank) {
             if (glbMax.maxValue == 0) {
                 status = 2;
                 MPI_Barrier(MPI_COMM_WORLD);
                 MPI_Send(&status, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
                 numMainStrIt[index] = i;
-                numMainStr[i] = mass1[currentRank] + VedIndex;
+                numMainStr[i] = mass1[rank] + VedIndex;
                 continue;
 
             } else {
                 // Номер итерации, на которой строка с локальным номером является ведущей для всей системы
                 numMainStrIt[VedIndex] = i;
                 //Вычисленный номер ведущей строки системы
-                numMainStr[i] = mass1[currentRank] + VedIndex;
+                numMainStr[i] = mass1[rank] + VedIndex;
             };
         };
         MPI_Bcast(&numMainStr[i], 1, MPI_INT, glbMax.currentRank, MPI_COMM_WORLD);
-        if (currentRank == glbMax.currentRank) {
-            for (int j = 0; j < matrixSize; j++)
+        if (rank == glbMax.currentRank) {
+            for (int j = 0; j < matrixSize; j++) {
                 glbWMatr[j] = matrixPart[VedIndex * matrixSize + j];
+            }
             glbWMatr[matrixSize] = vectorPart[VedIndex];
         };
         //Рассылка ведущей строки всем процессам
@@ -193,11 +198,13 @@ IterationItervedindex - локальный номер этой строки (в 
 void Frp(int stringIndex, int &iterationcurrentRank, int &IterationItervedindex) {
     //Определяем ранг процесса, содержащего данную строку
     for (int i = 0; i < size - 1; i++) {
-        if ((mass1[i] <= stringIndex) && (stringIndex < mass1[i + 1]))
+        if ((mass1[i] <= stringIndex) && (stringIndex < mass1[i + 1])) {
             iterationcurrentRank = i;
+        }
     }
-    if (stringIndex >= mass1[size - 1])
+    if (stringIndex >= mass1[size - 1]) {
         iterationcurrentRank = size - 1;
+    }
     IterationItervedindex = stringIndex - mass1[iterationcurrentRank];
 
 }
@@ -213,85 +220,92 @@ void gaussRevert() {
         Frp(numMainStr[i], itCurrentRank, indexMain);
         // Определили ранг процесса, содержащего текущую ведущую строку, и номер этой строки на процессе
         // Вычисляем значение неизвестной
-        if (currentRank == itCurrentRank) {
+        if (rank == itCurrentRank) {
             if (matrixPart[indexMain * matrixSize + i] == 0) {
-                if (vectorPart[indexMain] == 0)
+                if (vectorPart[indexMain] == 0) {
                     iterRes = mess;
-                else {
+                } else {
                     status = 0;
                     MPI_Barrier(MPI_COMM_WORLD);
                     MPI_Send(&status, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
                     break;
-                };
-            } else
+                }
+            } else {
                 iterRes = vectorPart[indexMain] / matrixPart[indexMain * matrixSize + i];
+            }
             //нашли значение переменной
             resultPart[indexMain] = iterRes;
-        };
+        }
         MPI_Bcast(&iterRes, 1, MPI_DOUBLE, itCurrentRank, MPI_COMM_WORLD);
         //подстановка найденной переменной
-        for (int j = 0; j < countStr; j++)
+        for (int j = 0; j < countStr; j++) {
             if (numMainStrIt[j] < i) {
                 val = matrixPart[matrixSize * j + i] * iterRes;
                 vectorPart[j] -= val;
-            };
-    };
+            }
+        }
+    }
 }
 
 //------------------------------------------------------------------------------
 
-int main(int argc, char *argv[]) {
-    double startTime, time;
-
-    printf("Start \n");
-    setvbuf(stdout, 0, _IONBF, 0);   // режим доступа и размер буфера
+void prepareMPI(int argc, char *argv[]) {
+    if (rank == 0) {
+        printf("Start \n");
+    }
+    setvbuf(stdout, 0, _IONBF, 0); // режим доступа и размер буфера
     MPI_Init(&argc, &argv);
-    MPI_Comm_rank(MPI_COMM_WORLD, &currentRank);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Barrier(MPI_COMM_WORLD);
+}
 
-    initMatrixAndVectors();
-    disributeDataBetweenProcesses();
 
+void printExecutionStatus(double time) {
+    if (rank == 0) {
+        if (status == 1) {
+            printf("\nDone \n"); // решение найдено
+        } else if (status == 0) {
+            printf("\nNo roots.\n"); // решений нет
+        } else if (status == 2) {
+            printf("\nCan't \n"); // решений бесконечно много
+        };
+        printf("\nTime: %f\n", time);
+    }
+}
+
+void calculateWithGaussMethod() {
     MPI_Barrier(MPI_COMM_WORLD);
-
-    startTime = MPI_Wtime();
-
+    double time = MPI_Wtime();
     gauss();
     gaussRevert();
-
     //сбор данных, передача от всех одному (нулевому процессу)
-    MPI_Gatherv(resultPart, range[currentRank], MPI_DOUBLE, result, range, mass1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(resultPart, range[rank], MPI_DOUBLE, result, range, mass1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
-    time = MPI_Wtime() - startTime;
-    if (currentRank == 0) {
-        // решение найдено
-        if (status == 1) {
-            printf("\nDone \n");
-        };
-        // решений нет
-        if (status == 0) {
-            printf("\nNo roots.\n");
-        }
-        // решений бесконечно много
-        if (status == 2) {
-            printf("\nCan't \n");
-        };
-        printf("\nTim: %f\n", time);
-    };
-    if (currentRank == 0) {
-        printf("\n End");
-    };
+    printExecutionStatus(MPI_Wtime() - time);
+}
 
+void printResult() {
     for (int i = 0; i < matrixSize; i++) {
         if (usePrint) {
             printf("\nresult[%i]=%f", i, result[i]);
         }
-    };
+    }
+}
 
+void finalize() {
+    if (rank == 0) {
+        printf("\n End");
+    }
     MPI_Finalize();
+    delete[] matrix, vector, result;
+}
 
-    delete[] matrix;
-    delete[] vector;
-    delete[] result;
+int main(int argc, char *argv[]) {
+    prepareMPI(argc, argv);
+    initMatrixAndVectors();
+    disributeDataBetweenProcesses();
+    calculateWithGaussMethod();
+    printResult();
+    finalize();
 }
