@@ -3,9 +3,13 @@
 #include <cstdlib>
 #include <cmath>
 
+bool usePrint = false;
+
 double *matrix, *vector, *result; //Основные данные. Заполняются через rand()
+
 double *matrixPart, *vectorPart, *resultPart, mess = 0.0; // Нарезка для данного процесса
-int matrixSize, status, countStr; //размер матрицы, статус решения задачи, строки для текущего процесса
+
+int matrixSize = 100, status, countStr; //размер матрицы, статус решения задачи, строки для текущего процесса
 int *numMainStr, *numMainStrIt; //ведущие строки для каждой итерации, номера итераций ведущих строк
 int size, currentRank, *mass1, *range;//Размер, ранг, рассылка, количество на каждый процесс
 
@@ -13,9 +17,6 @@ void initMatrixAndVectors() {
     int balanceStr; //Число строк, ещё не распределённых по процессам
     if (currentRank == 0) //Заполняем
     {
-        int show;
-        matrixSize = 3;
-        show = 1;
         srand(0); //псевдослучайные
 
         matrix = new double[matrixSize * matrixSize];
@@ -24,12 +25,15 @@ void initMatrixAndVectors() {
 
         for (int i = 0; i < matrixSize * matrixSize; i++) {
             matrix[i] = rand();
-            if (show == 1) printf("\nmatrix[%i]=%f", i, matrix[i]);
+            if (usePrint) {
+                printf("\nA[%i]=%f", i, matrix[i]);
+            }
         };
-
         for (int i = 0; i < matrixSize; i++) {
             vector[i] = rand();
-            if (show == 1) printf("\nb[%i]=%f", i, vector[i]);
+            if (usePrint) {
+                printf("\nb[%i]=%f", i, vector[i]);
+            }
             result[i] = 0;
         };
     }
@@ -280,7 +284,9 @@ int main(int argc, char *argv[]) {
     };
 
     for (int i = 0; i < matrixSize; i++) {
-        printf("\nresult[%i]=%f", i, result[i]);
+        if (usePrint) {
+            printf("\nresult[%i]=%f", i, result[i]);
+        }
     };
 
     MPI_Finalize();
