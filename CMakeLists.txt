@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
 project(mpi-test)
 add_subdirectory(lab1)
+add_subdirectory(lab2)
 
 set(CMAKE_CXX_STANDARD 17)
 
