@@ -15,14 +15,14 @@ IN tag	-	идентификатор сообщения (аналог типа с
 IN comm	-	коммуникатор области связи.
 
 
-`int MPI_Recv(void* buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Status *status)`
+`int MPI_Recv(void* buf, int count, MPI_Datatype datatype, int source, int tag, MPI_Comm comm, MPI_Status *solvingStatus)`
 OUT	buf	-	адрес начала расположения принимаемого сообщения;
 IN	count	-	максимальное число принимаемых элементов;
 IN	datatype	-	тип элементов принимаемого сообщения;
 IN	source	-	номер процесса-отправителя;
 IN	tag	-	идентификатор сообщения;
 IN	comm	-	коммуникатор области связи;
-OUT	status	-	атрибуты принятого сообщения.
+OUT	solvingStatus	-	атрибуты принятого сообщения.
 
 
 `int MPI_Barrier(MPI_Comm comm)`

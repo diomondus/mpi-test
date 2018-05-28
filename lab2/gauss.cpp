@@ -10,7 +10,7 @@ double *matrix, *vector, *result; // Основные данные. Заполн
 
 double *matrixPart, *vectorPart, *resultPart, mess = 0.0; // Нарезка для данного процесса
 
-int matrixSize = 3, status, partSizeOnProcess; // размер матрицы, статус решения задачи, строки для текущего процесса
+int matrixSize = 3, solvingStatus, partSizeOnProcess; // размер матрицы, статус решения задачи, строки для текущего процесса
 int *mainRowIndexArray, *mainRowIteration; // ведущие строки для каждой итерации, номера итераций ведущих строк
 int size, rank, *mass1, *range; // размер, ранг, рассылка, количество на каждый процесс
 
@@ -50,8 +50,9 @@ void initParts() {
     matrixPart = new double[partSizeOnProcess * matrixSize];
     vectorPart = new double[partSizeOnProcess]; // элементы столбца свободных членов
     resultPart = new double[partSizeOnProcess];
-    mainRowIndexArray = new int[matrixSize]; //массив индексов ведущих строк системы на каждой итерации
-    mainRowIteration = new int[partSizeOnProcess]; /* итерация, на которой соответствующая строка системы, расположенная на процессе, выбрана  ведущей */
+    mainRowIndexArray = new int[matrixSize]; // массив индексов ведущих строк системы на каждой итерации
+    // итерация, на которой соответствующая строка системы, расположенная на процессе, выбрана  ведущей
+    mainRowIteration = new int[partSizeOnProcess];
     mass1 = new int[size];
     range = new int[size];
     for (int i = 0; i < partSizeOnProcess; i++) {
@@ -67,49 +68,44 @@ void initData() {
 
 //------------------------------------------------------------------------------
 void disributeDataBetweenProcesses() { // Распределение исходных данных между процессами
-    int *matrElem;             //Индекс первого элемента матрицы, передаваемого процессу
-    int *matrRang;            //Число элементов матрицы, передаваемых процессу
-    int sizestr;
-    int balance;
-    int prevSize;
-    int prevIndex;
+    int *matrElem;             // Индекс первого элемента матрицы, передаваемого процессу
+    int *matrRang;            // Число элементов матрицы, передаваемых процессу
+    int previousRowCount = 0;
+    int nonDistributeRowCount;
+    int previousSize;
+    int previousIndex;
     int portion;
     matrElem = new int[size];
     matrRang = new int[size];
 
-    balance = matrixSize;
-
-    for (int i = 0; i < size; i++)  //Определяем, сколько элементов матрицы будет передано каждому процессу
-    {
-        prevSize = (i == 0) ? 0 : matrRang[i - 1];
-        prevIndex = (i == 0) ? 0 : matrElem[i - 1];
-        portion = (i == 0) ? 0 : sizestr;             //число строк, отданных предыдущему процессу
-        balance -= portion;
-        sizestr = balance / (size - i);
-        matrRang[i] = sizestr * matrixSize;
-        matrElem[i] = prevIndex + prevSize;
-    };
+    nonDistributeRowCount = matrixSize;
+    for (int i = 0; i < size; i++) {  //Определяем, сколько элементов матрицы будет передано каждому процессу
+        previousSize = (i == 0) ? 0 : matrRang[i - 1];
+        previousIndex = (i == 0) ? 0 : matrElem[i - 1];
+        portion = (i == 0) ? 0 : previousRowCount;             //число строк, отданных предыдущему процессу
+        nonDistributeRowCount -= portion;
+        previousRowCount = nonDistributeRowCount / (size - i);
+        matrRang[i] = previousRowCount * matrixSize;
+        matrElem[i] = previousIndex + previousSize;
+    }
 
     //Рассылка матрицы
-    MPI_Scatterv(matrix, matrRang, matrElem, MPI_DOUBLE, matrixPart, matrRang[rank], MPI_DOUBLE, 0,
-                 MPI_COMM_WORLD);
+    MPI_Scatterv(matrix, matrRang, matrElem, MPI_DOUBLE, matrixPart, matrRang[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-
-    balance = matrixSize;
-
+    nonDistributeRowCount = matrixSize;
     for (int i = 0; i < size; i++) {
-        int prevSize = (i == 0) ? 0 : range[i - 1];
-        int prevIndex = (i == 0) ? 0 : mass1[i - 1];
-        int portion = (i == 0) ? 0 : range[i - 1];
-        balance -= portion;
-        range[i] = balance / (size - i);
-        mass1[i] = prevIndex + prevSize;
-    };
+        previousSize = (i == 0) ? 0 : range[i - 1];
+        previousIndex = (i == 0) ? 0 : mass1[i - 1];
+        portion = (i == 0) ? 0 : range[i - 1];
+        nonDistributeRowCount -= portion;
+        range[i] = nonDistributeRowCount / (size - i);
+        mass1[i] = previousIndex + previousSize;
+    }
 
     //Рассылка вектора
     MPI_Scatterv(vector, range, mass1, MPI_DOUBLE, vectorPart, range[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    status = 1;
-    MPI_Bcast(&status, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    solvingStatus = 1;
+    MPI_Bcast(&solvingStatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&mess, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     delete[] matrRang;
     delete[] matrElem;
@@ -162,9 +158,9 @@ void gauss() {
         //Вычисление ведущей строки всей системы
         if (rank == glbMax.currentRank) {
             if (glbMax.maxValue == 0) {
-                status = 2;
+                solvingStatus = 2;
                 MPI_Barrier(MPI_COMM_WORLD);
-                MPI_Send(&status, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
+                MPI_Send(&solvingStatus, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
                 mainRowIteration[index] = i;
                 mainRowIndexArray[i] = mass1[rank] + VedIndex;
                 continue;
@@ -225,9 +221,9 @@ void gaussBackStroke() {
                 if (vectorPart[indexMain] == 0) {
                     iterRes = mess;
                 } else {
-                    status = 0;
+                    solvingStatus = 0;
                     MPI_Barrier(MPI_COMM_WORLD);
-                    MPI_Send(&status, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
+                    MPI_Send(&solvingStatus, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
                     break;
                 }
             } else {
@@ -263,11 +259,11 @@ void prepareMPI(int argc, char *argv[]) {
 
 void printExecutionStatus(double time) {
     if (rank == 0) {
-        if (status == 1) {
+        if (solvingStatus == 1) {
             printf("\nDone \n"); // решение найдено
-        } else if (status == 0) {
+        } else if (solvingStatus == 0) {
             printf("\nNo roots.\n"); // решений нет
-        } else if (status == 2) {
+        } else if (solvingStatus == 2) {
             printf("\nCan't \n"); // решений бесконечно много
         };
         printf("\nTime: %f\n", time);
