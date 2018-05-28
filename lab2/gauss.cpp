@@ -10,16 +10,16 @@ double *matrix, *vector, *result; // Основные данные. Заполн
 
 double *matrixPart, *vectorPart, *resultPart, mess = 0.0; // Нарезка для данного процесса
 
-int matrixSize = 100, status, countStr; // размер матрицы, статус решения задачи, строки для текущего процесса
-int *numMainStr, *numMainStrIt; // ведущие строки для каждой итерации, номера итераций ведущих строк
+int matrixSize = 3, status, partSizeOnProcess; // размер матрицы, статус решения задачи, строки для текущего процесса
+int *mainRowIndexArray, *mainRowIteration; // ведущие строки для каждой итерации, номера итераций ведущих строк
 int size, rank, *mass1, *range; // размер, ранг, рассылка, количество на каждый процесс
 
+//----------------------------------------------------------------------------------------------------------------------
 double getRandomDouble() {
     return rand() / 10000000.0;
 }
 
-void initMatrixAndVectors() {
-    int balanceStr = 0; //Число строк, ещё не распределённых по процессам
+void initMatrixAndVector() {
     if (rank == 0) //Заполняем
     {
         srand(static_cast<unsigned int>(time(0))); //псевдослучайные
@@ -42,31 +42,31 @@ void initMatrixAndVectors() {
             result[i] = 0;
         };
     }
+}
 
-    MPI_Bcast(&matrixSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    //Определение размера части данных, расположенных на конкретном процессе
-
-    for (int i = 0; i < rank; ++i)
-        balanceStr = matrixSize - matrixSize / (size - i);
-
-    countStr = balanceStr / (size - rank);
-    matrixPart = new double[countStr * matrixSize];//выделяем память под строки матрицы
-    vectorPart = new double[countStr]; //память под элементы столбца свободных членов
-    resultPart = new double[countStr]; //память под элементы вектора результата
-    numMainStr = new int[matrixSize]; //массив индексов ведущих строк системы на каждой итерации
-    numMainStrIt = new int[countStr]; /* итерация, на которой соответствующая строка системы, расположенная на процессе, выбрана  ведущей */
+void initParts() {
+    int nonDistributeRowCount = matrixSize - matrixSize / (size - rank + 1);
+    partSizeOnProcess = nonDistributeRowCount / (size - rank);// Определение размера части данных,на конкретном процессе
+    matrixPart = new double[partSizeOnProcess * matrixSize];
+    vectorPart = new double[partSizeOnProcess]; // элементы столбца свободных членов
+    resultPart = new double[partSizeOnProcess];
+    mainRowIndexArray = new int[matrixSize]; //массив индексов ведущих строк системы на каждой итерации
+    mainRowIteration = new int[partSizeOnProcess]; /* итерация, на которой соответствующая строка системы, расположенная на процессе, выбрана  ведущей */
     mass1 = new int[size];
     range = new int[size];
+    for (int i = 0; i < partSizeOnProcess; i++) {
+        mainRowIteration[i] = -1;
+    }
+}
 
-    for (int i = 0; i < countStr; i++)
-        numMainStrIt[i] = -1;
+void initData() {
+    initMatrixAndVector();
+    MPI_Bcast(&matrixSize, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    initParts();
 }
 
 //------------------------------------------------------------------------------
-
-// Распределение исходных данных между процессами
-void disributeDataBetweenProcesses() {
+void disributeDataBetweenProcesses() { // Распределение исходных данных между процессами
     int *matrElem;             //Индекс первого элемента матрицы, передаваемого процессу
     int *matrRang;            //Число элементов матрицы, передаваемых процессу
     int sizestr;
@@ -120,8 +120,8 @@ void disributeDataBetweenProcesses() {
 void Raw(int numIter, const double *glStr) {
     double koef;
     //для каждой строки в процессе
-    for (int i = 0; i < countStr; i++) {
-        if (numMainStrIt[i] == -1) {
+    for (int i = 0; i < partSizeOnProcess; i++) {
+        if (mainRowIteration[i] == -1) {
             koef = matrixPart[i * matrixSize + numIter] / glStr[numIter];
             for (int j = numIter; j < matrixSize; j++) {
                 matrixPart[i * matrixSize + j] -= glStr[j] * koef;
@@ -145,9 +145,9 @@ void gauss() {
         // Вычисление ведущей строки
         double maxValue = 0;
         int index = -1;
-        for (int j = 0; j < countStr; j++) {
+        for (int j = 0; j < partSizeOnProcess; j++) {
             index = j;
-            if ((numMainStrIt[j] == -1) && (maxValue < fabs(matrixPart[i + matrixSize * j]))) {
+            if ((mainRowIteration[j] == -1) && (maxValue < fabs(matrixPart[i + matrixSize * j]))) {
                 maxValue = fabs(matrixPart[i + matrixSize * j]);
                 VedIndex = j;
             }
@@ -165,18 +165,18 @@ void gauss() {
                 status = 2;
                 MPI_Barrier(MPI_COMM_WORLD);
                 MPI_Send(&status, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
-                numMainStrIt[index] = i;
-                numMainStr[i] = mass1[rank] + VedIndex;
+                mainRowIteration[index] = i;
+                mainRowIndexArray[i] = mass1[rank] + VedIndex;
                 continue;
 
             } else {
                 // Номер итерации, на которой строка с локальным номером является ведущей для всей системы
-                numMainStrIt[VedIndex] = i;
+                mainRowIteration[VedIndex] = i;
                 //Вычисленный номер ведущей строки системы
-                numMainStr[i] = mass1[rank] + VedIndex;
+                mainRowIndexArray[i] = mass1[rank] + VedIndex;
             };
         };
-        MPI_Bcast(&numMainStr[i], 1, MPI_INT, glbMax.currentRank, MPI_COMM_WORLD);
+        MPI_Bcast(&mainRowIndexArray[i], 1, MPI_INT, glbMax.currentRank, MPI_COMM_WORLD);
         if (rank == glbMax.currentRank) {
             for (int j = 0; j < matrixSize; j++) {
                 glbWMatr[j] = matrixPart[VedIndex * matrixSize + j];
@@ -210,14 +210,14 @@ void Frp(int stringIndex, int &iterationcurrentRank, int &IterationItervedindex)
 }
 
 
-void gaussRevert() {
+void gaussBackStroke() {
     int itCurrentRank;  // Ранг процесса, хранящего текущую ведущую строку
     int indexMain;    // локальный на своем процессе номер текущей ведущ
     double iterRes;   // значение Xi, найденное на итерации
     double val;
     // Основной цикл
     for (int i = matrixSize - 1; i >= 0; i--) {
-        Frp(numMainStr[i], itCurrentRank, indexMain);
+        Frp(mainRowIndexArray[i], itCurrentRank, indexMain);
         // Определили ранг процесса, содержащего текущую ведущую строку, и номер этой строки на процессе
         // Вычисляем значение неизвестной
         if (rank == itCurrentRank) {
@@ -238,8 +238,8 @@ void gaussRevert() {
         }
         MPI_Bcast(&iterRes, 1, MPI_DOUBLE, itCurrentRank, MPI_COMM_WORLD);
         //подстановка найденной переменной
-        for (int j = 0; j < countStr; j++) {
-            if (numMainStrIt[j] < i) {
+        for (int j = 0; j < partSizeOnProcess; j++) {
+            if (mainRowIteration[j] < i) {
                 val = matrixPart[matrixSize * j + i] * iterRes;
                 vectorPart[j] -= val;
             }
@@ -278,7 +278,7 @@ void calculateWithGaussMethod() {
     MPI_Barrier(MPI_COMM_WORLD);
     double time = MPI_Wtime();
     gauss();
-    gaussRevert();
+    gaussBackStroke();
     //сбор данных, передача от всех одному (нулевому процессу)
     MPI_Gatherv(resultPart, range[rank], MPI_DOUBLE, result, range, mass1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
@@ -303,7 +303,7 @@ void finalize() {
 
 int main(int argc, char *argv[]) {
     prepareMPI(argc, argv);
-    initMatrixAndVectors();
+    initData();
     disributeDataBetweenProcesses();
     calculateWithGaussMethod();
     printResult();
