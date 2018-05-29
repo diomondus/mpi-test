@@ -21,7 +21,7 @@ struct {
 
 int matrixSize = 5000;
 
-bool usePrint = true;
+bool usePrint = false;
 
 //----------------------------------------------------------------------------------------------------------------------
 double getRandomDouble() {
@@ -40,7 +40,10 @@ void initMatrixAndVector() {
         for (int i = 0; i < matrixSize * matrixSize; ++i) {
             matrix[i] = getRandomDouble();
             if (usePrint) {
-                printf("\nA[%i]=%f", i, matrix[i]);
+                printf("A[%i]=%f ", i, matrix[i]);
+                if (i % matrixSize == matrixSize - 1) {
+                    printf("\n");
+                }
             }
         };
         for (int i = 0; i < matrixSize; i++) {
