@@ -54,9 +54,10 @@ void initMatrixAndVector() {
 }
 
 void initParts() {
-    int nonDistributeRowCount = matrixSize - matrixSize / (size - rank + 1);
-    partSizePerProcess =
-            nonDistributeRowCount / (size - rank);// Определение размера части данных,на конкретном процессе
+    int nonDistributeRowCount = matrixSize;
+    for (int i = 0; i < rank; ++i)
+        nonDistributeRowCount = nonDistributeRowCount - nonDistributeRowCount / (size - i);
+    partSizePerProcess = nonDistributeRowCount / (size - rank);//Определение размера части данных,на конкретном процессе
     matrixPart = new double[partSizePerProcess * matrixSize];
     vectorPart = new double[partSizePerProcess]; // элементы столбца свободных членов
     resultPart = new double[partSizePerProcess];
