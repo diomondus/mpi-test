@@ -6,14 +6,20 @@
 
 int size, rank;
 
-double *matrix, *vector, *result; // Основные данные. Заполняются через rand()
+double *matrix, *vector, *result;
+double *matrixPart, *vectorPart, *resultPart;
 
-double *matrixPart, *vectorPart, *resultPart, mess = 0.0; // Нарезка для данного процесса
-
-int matrixSize = 3, solvingStatus, partSizePerProcess; // размер матрицы, статус решения задачи, строки для текущего процесса
+int solvingStatus, partSizePerProcess; // статус решения задачи, строки для текущего процесса
 int *mainRowIndexArray, *mainRowIteration; // ведущие строки для каждой итерации, номера итераций ведущих строк
-int *sendcounts; // цел массив (размер=max_rank), содержащий число элементов, посылаемых каждому процессу
+int *sendcounts; // массив (размер=max_rank), содержащий число элементов, посылаемых каждому процессу
 int *displs; // i-ое значение определяет смещение относительно начала sendbuf для данных, посылаемых процессу i
+
+struct {
+    double maxValue;
+    int currentRank;
+} localMax = {}, globalMax = {};
+
+int matrixSize = 5000;
 
 bool usePrint = true;
 
@@ -72,15 +78,9 @@ void initData() {
 
 //------------------------------------------------------------------------------
 void disributeDataBetweenProcesses() { // Распределение исходных данных между процессами
-    int *matrElem;             // Индекс первого элемента матрицы, передаваемого процессу
-    int *matrRang;            // Число элементов матрицы, передаваемых процессу
-    int previousRowCount = 0;
-    int nonDistributeRowCount;
-    int previousSize;
-    int previousIndex;
-    int portion;
-    matrElem = new int[size];
-    matrRang = new int[size];
+    int *matrElem = new int[size];             // Индекс первого элемента матрицы, передаваемого процессу
+    int *matrRang = new int[size];            // Число элементов матрицы, передаваемых процессу
+    int previousRowCount = 0, nonDistributeRowCount, previousSize, previousIndex, portion;
 
     nonDistributeRowCount = matrixSize;
     for (int i = 0; i < size; i++) {  //Определяем, сколько элементов матрицы будет передано каждому процессу
@@ -110,7 +110,6 @@ void disributeDataBetweenProcesses() { // Распределение исход�
     MPI_Scatterv(vector, sendcounts, displs, MPI_DOUBLE, vectorPart, sendcounts[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
     solvingStatus = 1;
     MPI_Bcast(&solvingStatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    MPI_Bcast(&mess, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     delete[] matrRang;
     delete[] matrElem;
 }
@@ -135,11 +134,6 @@ void multiplyByCoeffient(const double *matrix, int numIter) {
 
 void triangulate() {
     int mainRowInCurrentProcess = 0;   // индекс ведущей строки на конкретном процессе
-
-    struct {
-        double maxValue;
-        int currentRank;
-    } localMax = {}, globalMax = {}; //максимальный элемент+номер процесса, у которого он
 
     double *globalMatrix = new double[matrixSize + 1]; // т.е. строка матрицы + значение вектора
     for (int i = 0; i < matrixSize; i++) {
@@ -209,7 +203,7 @@ void findRankAndRowNumber(int rowIndex, int &iterationRank, int &localRowNumber)
 }
 
 
-void gaussBackStroke() {
+void backStroke() {
     int iterationRank;  // Ранг процесса, хранящего текущую ведущую строку
     int localRowNumber;    // локальный на своем процессе номер текущей ведущ
     double iterationResult;   // значение Xi, найденное на итерации
@@ -221,7 +215,7 @@ void gaussBackStroke() {
         if (rank == iterationRank) {
             if (matrixPart[localRowNumber * matrixSize + i] == 0) {
                 if (vectorPart[localRowNumber] == 0) {
-                    iterationResult = mess;
+                    iterationResult = 0.0;
                 } else {
                     solvingStatus = 0;
                     MPI_Barrier(MPI_COMM_WORLD);
@@ -277,7 +271,7 @@ void calculateWithGaussMethod() {
     MPI_Barrier(MPI_COMM_WORLD);
     double time = MPI_Wtime();
     triangulate();
-    gaussBackStroke();
+    backStroke();
     //сбор данных, передача от всех одному (нулевому процессу)
     MPI_Gatherv(resultPart, sendcounts[rank], MPI_DOUBLE, result, sendcounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
@@ -294,10 +288,12 @@ void printResult() {
 
 void finalize() {
     if (rank == 0) {
-        printf("\n End");
+        printf("\nEnd");
     }
     MPI_Finalize();
-    delete[] matrix, vector, result;
+    delete[] matrix;
+    delete[] vector;
+    delete[] result;
 }
 
 int main(int argc, char *argv[]) {
