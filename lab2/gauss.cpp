@@ -195,35 +195,33 @@ stringIndex - номер строки, которая была ведущей н
 iterationcurrentRank - процесс, на котором эта строка
 IterationItervedindex - локальный номер этой строки (в рамках одного процесса)
 */
-void Frp(int stringIndex, int &iterationcurrentRank, int &IterationItervedindex) {
+void findRankAndRowNumber(int rowIndex, int &iterationRank, int &localRowNumber) {
     //Определяем ранг процесса, содержащего данную строку
     for (int i = 0; i < size - 1; i++) {
-        if ((displs[i] <= stringIndex) && (stringIndex < displs[i + 1])) {
-            iterationcurrentRank = i;
+        if ((displs[i] <= rowIndex) && (rowIndex < displs[i + 1])) {
+            iterationRank = i;
         }
     }
-    if (stringIndex >= displs[size - 1]) {
-        iterationcurrentRank = size - 1;
+    if (rowIndex >= displs[size - 1]) {
+        iterationRank = size - 1;
     }
-    IterationItervedindex = stringIndex - displs[iterationcurrentRank];
-
+    localRowNumber = rowIndex - displs[iterationRank];
 }
 
 
 void gaussBackStroke() {
-    int itCurrentRank;  // Ранг процесса, хранящего текущую ведущую строку
-    int indexMain;    // локальный на своем процессе номер текущей ведущ
-    double iterRes;   // значение Xi, найденное на итерации
-    double val;
+    int iterationRank;  // Ранг процесса, хранящего текущую ведущую строку
+    int localRowNumber;    // локальный на своем процессе номер текущей ведущ
+    double iterationResult;   // значение Xi, найденное на итерации
     // Основной цикл
     for (int i = matrixSize - 1; i >= 0; i--) {
-        Frp(mainRowIndexArray[i], itCurrentRank, indexMain);
+        findRankAndRowNumber(mainRowIndexArray[i], iterationRank, localRowNumber);
         // Определили ранг процесса, содержащего текущую ведущую строку, и номер этой строки на процессе
         // Вычисляем значение неизвестной
-        if (rank == itCurrentRank) {
-            if (matrixPart[indexMain * matrixSize + i] == 0) {
-                if (vectorPart[indexMain] == 0) {
-                    iterRes = mess;
+        if (rank == iterationRank) {
+            if (matrixPart[localRowNumber * matrixSize + i] == 0) {
+                if (vectorPart[localRowNumber] == 0) {
+                    iterationResult = mess;
                 } else {
                     solvingStatus = 0;
                     MPI_Barrier(MPI_COMM_WORLD);
@@ -231,16 +229,17 @@ void gaussBackStroke() {
                     break;
                 }
             } else {
-                iterRes = vectorPart[indexMain] / matrixPart[indexMain * matrixSize + i];
+                iterationResult = vectorPart[localRowNumber] / matrixPart[localRowNumber * matrixSize + i];
             }
             //нашли значение переменной
-            resultPart[indexMain] = iterRes;
+            resultPart[localRowNumber] = iterationResult;
         }
-        MPI_Bcast(&iterRes, 1, MPI_DOUBLE, itCurrentRank, MPI_COMM_WORLD);
+        MPI_Bcast(&iterationResult, 1, MPI_DOUBLE, iterationRank, MPI_COMM_WORLD);
         //подстановка найденной переменной
+        double val;
         for (int j = 0; j < partSizePerProcess; j++) {
             if (mainRowIteration[j] < i) {
-                val = matrixPart[matrixSize * j + i] * iterRes;
+                val = matrixPart[matrixSize * j + i] * iterationResult;
                 vectorPart[j] -= val;
             }
         }
