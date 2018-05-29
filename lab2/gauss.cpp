@@ -117,16 +117,15 @@ void disributeDataBetweenProcesses() { // Распределение исход�
 
 //------------------------------------------------------------------------------
 
-void Raw(int numIter, const double *glStr) {
-    double koef;
-    //для каждой строки в процессе
-    for (int i = 0; i < partSizePerProcess; i++) {
+void multiplyByCoeffient(const double *matrix, int numIter) {
+    double coeffient;
+    for (int i = 0; i < partSizePerProcess; i++) {     // для каждой строки в процессе
         if (mainRowIteration[i] == -1) {
-            koef = matrixPart[i * matrixSize + numIter] / glStr[numIter];
+            coeffient = matrixPart[i * matrixSize + numIter] / matrix[numIter];
             for (int j = numIter; j < matrixSize; j++) {
-                matrixPart[i * matrixSize + j] -= glStr[j] * koef;
+                matrixPart[i * matrixSize + j] -= matrix[j] * coeffient;
             };
-            vectorPart[i] -= glStr[matrixSize] * koef;
+            vectorPart[i] -= matrix[matrixSize] * coeffient;
 
         };
     };
@@ -134,13 +133,15 @@ void Raw(int numIter, const double *glStr) {
 
 //------------------------------------------------------------------------------
 
-void gauss() {
-    int VedIndex;   // индекс ведущей строки на конкретном процессе
+void triangulate() {
+    int mainRowInCurrentProcess = 0;   // индекс ведущей строки на конкретном процессе
+
     struct {
         double maxValue;
         int currentRank;
-    } localMax = {}, glbMax = {}; //максимальный элемент+номер процесса, у которого он
-    double *glbWMatr = new double[matrixSize + 1]; //т.е. строка матрицы+значение вектора
+    } localMax = {}, globalMax = {}; //максимальный элемент+номер процесса, у которого он
+
+    double *globalMatrix = new double[matrixSize + 1]; // т.е. строка матрицы + значение вектора
     for (int i = 0; i < matrixSize; i++) {
         // Вычисление ведущей строки
         double maxValue = 0;
@@ -149,45 +150,44 @@ void gauss() {
             index = j;
             if ((mainRowIteration[j] == -1) && (maxValue < fabs(matrixPart[i + matrixSize * j]))) {
                 maxValue = fabs(matrixPart[i + matrixSize * j]);
-                VedIndex = j;
+                mainRowInCurrentProcess = j;
             }
         }
 
         localMax.maxValue = maxValue;
         localMax.currentRank = rank;
 
-        //каждый процесс рассылает свой локально максимальный элемент по всем столцам, все процесы принимают уже глобально максимальный элемент
-        MPI_Allreduce(&localMax, &glbMax, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
+        // каждый процесс рассылает свой локально максимальный элемент по всем столцам, все процесы принимают уже глобально максимальный элемент
+        MPI_Allreduce(&localMax, &globalMax, 1, MPI_DOUBLE_INT, MPI_MAXLOC, MPI_COMM_WORLD);
 
         //Вычисление ведущей строки всей системы
-        if (rank == glbMax.currentRank) {
-            if (glbMax.maxValue == 0) {
+        if (rank == globalMax.currentRank) {
+            if (globalMax.maxValue == 0) {
                 solvingStatus = 2;
                 MPI_Barrier(MPI_COMM_WORLD);
                 MPI_Send(&solvingStatus, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
                 mainRowIteration[index] = i;
-                mainRowIndexArray[i] = displs[rank] + VedIndex;
+                mainRowIndexArray[i] = displs[rank] + mainRowInCurrentProcess;
                 continue;
-
             } else {
                 // Номер итерации, на которой строка с локальным номером является ведущей для всей системы
-                mainRowIteration[VedIndex] = i;
+                mainRowIteration[mainRowInCurrentProcess] = i;
                 //Вычисленный номер ведущей строки системы
-                mainRowIndexArray[i] = displs[rank] + VedIndex;
-            };
-        };
-        MPI_Bcast(&mainRowIndexArray[i], 1, MPI_INT, glbMax.currentRank, MPI_COMM_WORLD);
-        if (rank == glbMax.currentRank) {
-            for (int j = 0; j < matrixSize; j++) {
-                glbWMatr[j] = matrixPart[VedIndex * matrixSize + j];
+                mainRowIndexArray[i] = displs[rank] + mainRowInCurrentProcess;
             }
-            glbWMatr[matrixSize] = vectorPart[VedIndex];
-        };
+        }
+        MPI_Bcast(&mainRowIndexArray[i], 1, MPI_INT, globalMax.currentRank, MPI_COMM_WORLD);
+        if (rank == globalMax.currentRank) {
+            for (int j = 0; j < matrixSize; j++) {
+                globalMatrix[j] = matrixPart[mainRowInCurrentProcess * matrixSize + j];
+            }
+            globalMatrix[matrixSize] = vectorPart[mainRowInCurrentProcess];
+        }
         //Рассылка ведущей строки всем процессам
-        MPI_Bcast(glbWMatr, matrixSize + 1, MPI_DOUBLE, glbMax.currentRank, MPI_COMM_WORLD);
+        MPI_Bcast(globalMatrix, matrixSize + 1, MPI_DOUBLE, globalMax.currentRank, MPI_COMM_WORLD);
         //Исключение неизвестных в столбце с номером i
-        Raw(i, glbWMatr);
-    };
+        multiplyByCoeffient(globalMatrix, i);
+    }
 }
 
 /*
@@ -277,7 +277,7 @@ void printExecutionStatus(double time) {
 void calculateWithGaussMethod() {
     MPI_Barrier(MPI_COMM_WORLD);
     double time = MPI_Wtime();
-    gauss();
+    triangulate();
     gaussBackStroke();
     //сбор данных, передача от всех одному (нулевому процессу)
     MPI_Gatherv(resultPart, sendcounts[rank], MPI_DOUBLE, result, sendcounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
