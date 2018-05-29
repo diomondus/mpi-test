@@ -189,21 +189,21 @@ void triangulate() {
 }
 
 /*
-stringIndex - номер строки, которая была ведущей на определеной итерации
-iterationcurrentRank - процесс, на котором эта строка
-IterationItervedindex - локальный номер этой строки (в рамках одного процесса)
+mainRowNumber - номер строки, которая была ведущей на определеной итерации
+iterationRank - процесс, на котором эта строка
+localRowNumber - локальный номер этой строки (в рамках одного процесса)
 */
-void findRankAndRowNumber(int rowIndex, int &iterationRank, int &localRowNumber) {
+void findRankAndRowNumber(int mainRowNumber, int &iterationRank, int &localRowNumber) {
     //Определяем ранг процесса, содержащего данную строку
     for (int i = 0; i < size - 1; i++) {
-        if ((displs[i] <= rowIndex) && (rowIndex < displs[i + 1])) {
+        if ((displs[i] <= mainRowNumber) && (mainRowNumber < displs[i + 1])) {
             iterationRank = i;
         }
     }
-    if (rowIndex >= displs[size - 1]) {
+    if (mainRowNumber >= displs[size - 1]) {
         iterationRank = size - 1;
     }
-    localRowNumber = rowIndex - displs[iterationRank];
+    localRowNumber = mainRowNumber - displs[iterationRank];
 }
 
 
