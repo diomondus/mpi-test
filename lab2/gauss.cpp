@@ -12,7 +12,8 @@ double *matrixPart, *vectorPart, *resultPart, mess = 0.0; // Нарезка дл
 
 int matrixSize = 3, solvingStatus, partSizePerProcess; // размер матрицы, статус решения задачи, строки для текущего процесса
 int *mainRowIndexArray, *mainRowIteration; // ведущие строки для каждой итерации, номера итераций ведущих строк
-int *mass1, *rangePerProcess; // размер, ранг, рассылка, количество на каждый процесс
+int *sendcounts; // цел массив (размер=max_rank), содержащий число элементов, посылаемых каждому процессу
+int *displs; // i-ое значение определяет смещение относительно начала sendbuf для данных, посылаемых процессу i
 
 bool usePrint = true;
 
@@ -48,15 +49,16 @@ void initMatrixAndVector() {
 
 void initParts() {
     int nonDistributeRowCount = matrixSize - matrixSize / (size - rank + 1);
-    partSizePerProcess = nonDistributeRowCount / (size - rank);// Определение размера части данных,на конкретном процессе
+    partSizePerProcess =
+            nonDistributeRowCount / (size - rank);// Определение размера части данных,на конкретном процессе
     matrixPart = new double[partSizePerProcess * matrixSize];
     vectorPart = new double[partSizePerProcess]; // элементы столбца свободных членов
     resultPart = new double[partSizePerProcess];
     mainRowIndexArray = new int[matrixSize]; // массив индексов ведущих строк системы на каждой итерации
     // итерация, на которой соответствующая строка системы, расположенная на процессе, выбрана  ведущей
     mainRowIteration = new int[partSizePerProcess];
-    mass1 = new int[size];
-    rangePerProcess = new int[size];
+    displs = new int[size];
+    sendcounts = new int[size];
     for (int i = 0; i < partSizePerProcess; i++) {
         mainRowIteration[i] = -1;
     }
@@ -96,16 +98,16 @@ void disributeDataBetweenProcesses() { // Распределение исход�
 
     nonDistributeRowCount = matrixSize;
     for (int i = 0; i < size; i++) {
-        previousSize = (i == 0) ? 0 : rangePerProcess[i - 1];
-        previousIndex = (i == 0) ? 0 : mass1[i - 1];
-        portion = (i == 0) ? 0 : rangePerProcess[i - 1];
+        previousSize = (i == 0) ? 0 : sendcounts[i - 1];
+        previousIndex = (i == 0) ? 0 : displs[i - 1];
+        portion = (i == 0) ? 0 : sendcounts[i - 1];
         nonDistributeRowCount -= portion;
-        rangePerProcess[i] = nonDistributeRowCount / (size - i);
-        mass1[i] = previousIndex + previousSize;
+        sendcounts[i] = nonDistributeRowCount / (size - i);
+        displs[i] = previousIndex + previousSize;
     }
 
     //Рассылка вектора
-    MPI_Scatterv(vector, rangePerProcess, mass1, MPI_DOUBLE, vectorPart, rangePerProcess[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(vector, sendcounts, displs, MPI_DOUBLE, vectorPart, sendcounts[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
     solvingStatus = 1;
     MPI_Bcast(&solvingStatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&mess, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -164,14 +166,14 @@ void gauss() {
                 MPI_Barrier(MPI_COMM_WORLD);
                 MPI_Send(&solvingStatus, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD);
                 mainRowIteration[index] = i;
-                mainRowIndexArray[i] = mass1[rank] + VedIndex;
+                mainRowIndexArray[i] = displs[rank] + VedIndex;
                 continue;
 
             } else {
                 // Номер итерации, на которой строка с локальным номером является ведущей для всей системы
                 mainRowIteration[VedIndex] = i;
                 //Вычисленный номер ведущей строки системы
-                mainRowIndexArray[i] = mass1[rank] + VedIndex;
+                mainRowIndexArray[i] = displs[rank] + VedIndex;
             };
         };
         MPI_Bcast(&mainRowIndexArray[i], 1, MPI_INT, glbMax.currentRank, MPI_COMM_WORLD);
@@ -196,14 +198,14 @@ IterationItervedindex - локальный номер этой строки (в 
 void Frp(int stringIndex, int &iterationcurrentRank, int &IterationItervedindex) {
     //Определяем ранг процесса, содержащего данную строку
     for (int i = 0; i < size - 1; i++) {
-        if ((mass1[i] <= stringIndex) && (stringIndex < mass1[i + 1])) {
+        if ((displs[i] <= stringIndex) && (stringIndex < displs[i + 1])) {
             iterationcurrentRank = i;
         }
     }
-    if (stringIndex >= mass1[size - 1]) {
+    if (stringIndex >= displs[size - 1]) {
         iterationcurrentRank = size - 1;
     }
-    IterationItervedindex = stringIndex - mass1[iterationcurrentRank];
+    IterationItervedindex = stringIndex - displs[iterationcurrentRank];
 
 }
 
@@ -278,7 +280,7 @@ void calculateWithGaussMethod() {
     gauss();
     gaussBackStroke();
     //сбор данных, передача от всех одному (нулевому процессу)
-    MPI_Gatherv(resultPart, rangePerProcess[rank], MPI_DOUBLE, result, rangePerProcess, mass1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(resultPart, sendcounts[rank], MPI_DOUBLE, result, sendcounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
     printExecutionStatus(MPI_Wtime() - time);
 }
