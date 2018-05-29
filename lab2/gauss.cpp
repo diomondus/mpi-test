@@ -4,15 +4,17 @@
 #include <cmath>
 #include <ctime>
 
-bool usePrint = true;
+int size, rank;
 
 double *matrix, *vector, *result; // Основные данные. Заполняются через rand()
 
 double *matrixPart, *vectorPart, *resultPart, mess = 0.0; // Нарезка для данного процесса
 
-int matrixSize = 3, solvingStatus, partSizeOnProcess; // размер матрицы, статус решения задачи, строки для текущего процесса
+int matrixSize = 3, solvingStatus, partSizePerProcess; // размер матрицы, статус решения задачи, строки для текущего процесса
 int *mainRowIndexArray, *mainRowIteration; // ведущие строки для каждой итерации, номера итераций ведущих строк
-int size, rank, *mass1, *range; // размер, ранг, рассылка, количество на каждый процесс
+int *mass1, *rangePerProcess; // размер, ранг, рассылка, количество на каждый процесс
+
+bool usePrint = true;
 
 //----------------------------------------------------------------------------------------------------------------------
 double getRandomDouble() {
@@ -46,16 +48,16 @@ void initMatrixAndVector() {
 
 void initParts() {
     int nonDistributeRowCount = matrixSize - matrixSize / (size - rank + 1);
-    partSizeOnProcess = nonDistributeRowCount / (size - rank);// Определение размера части данных,на конкретном процессе
-    matrixPart = new double[partSizeOnProcess * matrixSize];
-    vectorPart = new double[partSizeOnProcess]; // элементы столбца свободных членов
-    resultPart = new double[partSizeOnProcess];
+    partSizePerProcess = nonDistributeRowCount / (size - rank);// Определение размера части данных,на конкретном процессе
+    matrixPart = new double[partSizePerProcess * matrixSize];
+    vectorPart = new double[partSizePerProcess]; // элементы столбца свободных членов
+    resultPart = new double[partSizePerProcess];
     mainRowIndexArray = new int[matrixSize]; // массив индексов ведущих строк системы на каждой итерации
     // итерация, на которой соответствующая строка системы, расположенная на процессе, выбрана  ведущей
-    mainRowIteration = new int[partSizeOnProcess];
+    mainRowIteration = new int[partSizePerProcess];
     mass1 = new int[size];
-    range = new int[size];
-    for (int i = 0; i < partSizeOnProcess; i++) {
+    rangePerProcess = new int[size];
+    for (int i = 0; i < partSizePerProcess; i++) {
         mainRowIteration[i] = -1;
     }
 }
@@ -94,16 +96,16 @@ void disributeDataBetweenProcesses() { // Распределение исход�
 
     nonDistributeRowCount = matrixSize;
     for (int i = 0; i < size; i++) {
-        previousSize = (i == 0) ? 0 : range[i - 1];
+        previousSize = (i == 0) ? 0 : rangePerProcess[i - 1];
         previousIndex = (i == 0) ? 0 : mass1[i - 1];
-        portion = (i == 0) ? 0 : range[i - 1];
+        portion = (i == 0) ? 0 : rangePerProcess[i - 1];
         nonDistributeRowCount -= portion;
-        range[i] = nonDistributeRowCount / (size - i);
+        rangePerProcess[i] = nonDistributeRowCount / (size - i);
         mass1[i] = previousIndex + previousSize;
     }
 
     //Рассылка вектора
-    MPI_Scatterv(vector, range, mass1, MPI_DOUBLE, vectorPart, range[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Scatterv(vector, rangePerProcess, mass1, MPI_DOUBLE, vectorPart, rangePerProcess[rank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
     solvingStatus = 1;
     MPI_Bcast(&solvingStatus, 1, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(&mess, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
@@ -116,7 +118,7 @@ void disributeDataBetweenProcesses() { // Распределение исход�
 void Raw(int numIter, const double *glStr) {
     double koef;
     //для каждой строки в процессе
-    for (int i = 0; i < partSizeOnProcess; i++) {
+    for (int i = 0; i < partSizePerProcess; i++) {
         if (mainRowIteration[i] == -1) {
             koef = matrixPart[i * matrixSize + numIter] / glStr[numIter];
             for (int j = numIter; j < matrixSize; j++) {
@@ -141,7 +143,7 @@ void gauss() {
         // Вычисление ведущей строки
         double maxValue = 0;
         int index = -1;
-        for (int j = 0; j < partSizeOnProcess; j++) {
+        for (int j = 0; j < partSizePerProcess; j++) {
             index = j;
             if ((mainRowIteration[j] == -1) && (maxValue < fabs(matrixPart[i + matrixSize * j]))) {
                 maxValue = fabs(matrixPart[i + matrixSize * j]);
@@ -234,7 +236,7 @@ void gaussBackStroke() {
         }
         MPI_Bcast(&iterRes, 1, MPI_DOUBLE, itCurrentRank, MPI_COMM_WORLD);
         //подстановка найденной переменной
-        for (int j = 0; j < partSizeOnProcess; j++) {
+        for (int j = 0; j < partSizePerProcess; j++) {
             if (mainRowIteration[j] < i) {
                 val = matrixPart[matrixSize * j + i] * iterRes;
                 vectorPart[j] -= val;
@@ -276,7 +278,7 @@ void calculateWithGaussMethod() {
     gauss();
     gaussBackStroke();
     //сбор данных, передача от всех одному (нулевому процессу)
-    MPI_Gatherv(resultPart, range[rank], MPI_DOUBLE, result, range, mass1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Gatherv(resultPart, rangePerProcess[rank], MPI_DOUBLE, result, rangePerProcess, mass1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
     printExecutionStatus(MPI_Wtime() - time);
 }
