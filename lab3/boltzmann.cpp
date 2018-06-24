@@ -41,24 +41,6 @@ typedef struct {
     int last;
 } RowBounds;
 
-void testVectorFunctions();
-
-void testVectorSum();
-
-void testVectorMultiply();
-
-void testVectorModulus();
-
-void testScalarMultiplication();
-
-void testModelFunctions();
-
-void testDensity();
-
-void testVelocity();
-
-void boundsComputationTest();
-
 void sumVectors(double *first, double *second, double *result);
 
 void multiplyVector(double *vector, double multiplier, double *result);
@@ -90,21 +72,17 @@ void streaming(Grid *pg, int rank, int worldSize);
 
 void collision(Grid *pg);
 
-void freeGrid(Grid *pg);
-
 int main(int argc, char *argv[]) {
-    testVectorFunctions();
-    testModelFunctions();
 
     int rank, worldSize, gridWidth, totalTime, snapshotRate;
     double speed, relaxationTime;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
-    if (worldSize < 2) {
-        printf("world is too small");
-        exit(1);
-    }
+//    if (worldSize < 2) {
+//        printf("world is too small");
+//        exit(1);
+//    }
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     initializeSimulationParameters(argc, argv, worldSize, &speed, &relaxationTime, &totalTime, &snapshotRate,
@@ -202,101 +180,6 @@ double scalarMultiplication(double *first, double *second) {
 
 double cosBetweenVectors(double *first, double *second) {
     return scalarMultiplication(first, second) / (modulusOfVector(first) * modulusOfVector(second));
-}
-
-void testModelFunctions() {
-    testDensity();
-    testVelocity();
-    boundsComputationTest();
-}
-
-void boundsComputationTest() {
-    RowBounds firstBounds = getMyBounds(5, 3, 0);
-    if (firstBounds.first != 0 && firstBounds.last != 1) {
-        exit(103);
-    }
-    RowBounds secondBounds = getMyBounds(5, 3, 1);
-    if (secondBounds.first != 2 && secondBounds.last != 3) {
-        exit(104);
-    }
-    RowBounds thirdBounds = getMyBounds(5, 3, 2);
-    if (thirdBounds.first != 4 && thirdBounds.last != 4) {
-        exit(105);
-    }
-
-    firstBounds = getMyBounds(4, 3, 0);
-    if (firstBounds.first != 0 && firstBounds.last != 1) {
-        exit(106);
-    }
-    secondBounds = getMyBounds(4, 3, 1);
-    if (secondBounds.first != 2 && secondBounds.last != 2) {
-        exit(107);
-    }
-    thirdBounds = getMyBounds(4, 3, 2);
-    if (thirdBounds.first != 3 && thirdBounds.last != 3) {
-        exit(108);
-    }
-}
-
-void testVelocity() {
-    double particleDistribution[LATTICE_DIRECTIONS] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
-    double density = calculateDensity(particleDistribution);
-    double velocity[2];
-    calculateVelocity(particleDistribution, density, 0.1, velocity);
-    if (velocity[0] != -0.0055555555555555601 || velocity[1] != -0.016666666666666666) {
-        exit(102);
-    }
-}
-
-void testDensity() {
-    double particleDistribution[LATTICE_DIRECTIONS] = {0, 1, 2, 3, 4, 5, 6, 7, 8};
-    double density = calculateDensity(particleDistribution);
-    if (density != (8 + 0) / 2 * 9) {
-        exit(101);
-    }
-}
-
-void testScalarMultiplication() {
-    double first[2] = {1, 2};
-    double second[2] = {3, 4};
-    double scalar = scalarMultiplication(first, second);
-    if (scalar != 1 * 3 + 2 * 4) {
-        exit(5);
-    }
-}
-
-void testVectorModulus() {
-    double first[2] = {4, 3};
-    double modulus = modulusOfVector(first);
-    if (modulus != 5.) {
-        exit(4);
-    }
-}
-
-void testVectorMultiply() {
-    double first[2] = {1, 2};
-    double result[2];
-    multiplyVector(first, 2, result);
-    if (result[0] != 2 || result[1] != 4) {
-        exit(3);
-    }
-}
-
-void testVectorSum() {
-    double first[2] = {1, 2};
-    double second[2] = {3, 4};
-    double result[2];
-    sumVectors(first, second, result);
-    if (result[0] != 4 || result[1] != 6) {
-        exit(2);
-    }
-}
-
-void testVectorFunctions() {
-    testVectorSum();
-    testVectorMultiply();
-    testVectorModulus();
-    testScalarMultiplication();
 }
 
 /**
@@ -632,10 +515,6 @@ void initializeGrid(Grid *pg, int gridSize, RowBounds bounds, double latticeSpee
     }
 }
 
-void freeGrid(Grid *pg) {
-    //высвобождение ресурсов решётки
-}
-
 void getSnapshot(Grid *pg, MacroData *snapshot) {
     for (int row = 0; row < pg->height; ++row) {
         for (int column = 0; column < pg->width; ++column) {
@@ -662,4 +541,3 @@ void saveSnapshots(MacroData *snapshots, int width, int snapshotIndex) {
     }
     fclose(file);
 }
-
