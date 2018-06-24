@@ -6,6 +6,8 @@
 
 #define LATTICE_DIRECTIONS 9
 
+// тестовые данные 1 0.8 100 999 100
+
 double weights[] = {4.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 36, 1.0 / 36, 1.0 / 36, 1.0 / 36};
 
 const double elementalVectors[LATTICE_DIRECTIONS][2] = {{0,  0},
