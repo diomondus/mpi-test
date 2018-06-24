@@ -6,9 +6,7 @@
 
 #define LATTICE_DIRECTIONS 9
 
-double weights[] = {4.0 / 9,
-                    1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9,
-                    1.0 / 36, 1.0 / 36, 1.0 / 36, 1.0 / 36};
+double weights[] = {4.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 36, 1.0 / 36, 1.0 / 36, 1.0 / 36};
 
 const double elementalVectors[LATTICE_DIRECTIONS][2] = {{0,  0},
                                                         {1,  0},
@@ -21,7 +19,7 @@ const double elementalVectors[LATTICE_DIRECTIONS][2] = {{0,  0},
                                                         {1,  -1}};
 
 typedef struct {
-    double density;//макроскопическая плотность
+    double density;         //макроскопическая плотность
     double velocity[2];    //макроскопическая скорость, 0 - горизонтельно, 1 - вертикально
 } MacroData;
 
@@ -31,7 +29,7 @@ typedef struct {
 } Cell;
 
 typedef struct {
-    int height, width;            //размеры сетки
+    int height, width;                          //размеры сетки
     double relaxationTime, latticeSpeed;        //время релаксации и скорость сетки
     Cell **nodes;
 } Grid;
@@ -41,14 +39,14 @@ typedef struct {
     int last;
 } RowBounds;
 
-void sumVectors(double *first, double *second, double *result) {
+void addVectors(const double *first, const double *second, double *result) {
     int i;
     for (i = 0; i < 2; ++i) {
         result[i] = first[i] + second[i];
     }
 }
 
-void multiplyVector(double *vector, double multiplier, double *result) {
+void mulVector(const double *vector, double multiplier, double *result) {
     int i;
     for (i = 0; i < 2; ++i) {
         result[i] = vector[i] * multiplier;
@@ -59,7 +57,7 @@ double modulusOfVector(double *vector) {
     return sqrt(pow(vector[0], 2) + pow(vector[1], 2));
 }
 
-double scalarMultiplication(double *first, double *second) {
+double scalarMultiplication(const double *first, const double *second) {
     double result = 0;
     int i;
     for (i = 0; i < 2; ++i) {
@@ -108,12 +106,11 @@ void calculateVelocity(double *particleDistribution, double macroscopicDensity, 
     }
     int direction;
     for (direction = 0; direction < LATTICE_DIRECTIONS; ++direction) {
-        multiplyVector((double *) elementalVectors[direction], particleDistribution[direction], temp);
-        multiplyVector((double *) temp, latticeSpeed, temp);
-        sumVectors(result, temp, result);
+        mulVector((double *) elementalVectors[direction], particleDistribution[direction], temp);
+        mulVector((double *) temp, latticeSpeed, temp);
+        addVectors(result, temp, result);
     }
-
-    multiplyVector(result, 1. / macroscopicDensity, result);
+    mulVector(result, 1. / macroscopicDensity, result);
 }
 
 /**
@@ -158,9 +155,8 @@ void calculateEquilibriumDistribution(double latticeSpeed, double density, doubl
 void streaming(Grid *pg, int rank, int worldSize) {
     int hasUpperBound = rank != 1;
     int hasLowerBound = rank != (worldSize - 1);
-    Cell *upperBound, *lowerBound;
+    Cell *upperBound = nullptr, *lowerBound = nullptr;
     size_t rowSize = sizeof(Cell) * pg->width;
-
 
     //Обмен смежными строками сетки
     if (hasUpperBound) {
@@ -286,8 +282,8 @@ void fillTempFieldForNode(const Grid *grid, const Cell *upperBound, int hasUpper
 * @param relaxationTime время релаксации газа
 * @param result новое распределение частиц
 */
-void updateDistribution(double *tempDistribution,
-                        double *equilibriumDistribution,
+void updateDistribution(const double *tempDistribution,
+                        const double *equilibriumDistribution,
                         double relaxationTime,
                         double *result) {
     for (int direction = 0; direction < LATTICE_DIRECTIONS; ++direction) {
@@ -340,7 +336,7 @@ double tangentProjectionCubed(double *from, double *to) {
  * @param column столбец
  * @param result распределение частиц по направлениям в данной точке.
  */
-void generateTwisterData(double *centerOfGrid, int row, int column, double *result) {
+void generateTwisterData(const double *centerOfGrid, int row, int column, double *result) {
     double perpendicular[2];
     perpendicular[0] = centerOfGrid[1] - column;
     perpendicular[1] = row - centerOfGrid[0];
@@ -408,17 +404,18 @@ int main(int argc, char *argv[]) {
 
     initializeGrid(worldSize, &gridWidth);
 
-    Grid grid;
+
 
     //Служебные данные для передачи снепшотов
-    int *snapshotSizes = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
-    int *snapshotOffsets = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
+    auto *snapshotSizes = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
+    auto *snapshotOffsets = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
     for (int nonMasterNode = 1; nonMasterNode < worldSize; ++nonMasterNode) {
         RowBounds bounds = getMyBounds(gridWidth, worldSize - 1, nonMasterNode - 1);
         snapshotSizes[nonMasterNode] = (bounds.last - bounds.first + 1) * gridWidth * sizeof(MacroData);
         snapshotOffsets[nonMasterNode] = bounds.first * gridWidth * sizeof(MacroData);
     }
 
+    Grid grid;
     if (rank != 0) {
         RowBounds rowBounds = getMyBounds(gridWidth, worldSize - 1, rank - 1);
         initializeGrid(&grid, gridWidth, rowBounds, speed, relaxationTime);
