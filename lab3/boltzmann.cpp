@@ -74,15 +74,15 @@ double cosBetweenVectors(double *first, double *second) {
 
 /**
 * @param gridWidth ширина квадратной сетки
-* @param computationalProcessorsCount количество вычислитетей
+* @param worldSizeMinesOne количество вычислитетей
 * @param index номер вычислителя начиная с 0
 * @return Индексы первой и последней строк в сетке.
 */
-RowBounds getMyBounds(int gridWidth, int computationalProcessorsCount, int index) {
-    int remainder = gridWidth % computationalProcessorsCount;
+RowBounds getMyBounds(int gridWidth, int worldSizeMinesOne, int index) {
+    int remainder = gridWidth % worldSizeMinesOne;
     RowBounds res;
-    res.first = gridWidth / computationalProcessorsCount * index + (index < remainder ? index : remainder);
-    res.last = gridWidth / computationalProcessorsCount * (index + 1) - 1 + (index < remainder ? index + 1 : remainder);
+    res.first = gridWidth / worldSizeMinesOne * index + (index < remainder ? index : remainder);
+    res.last = gridWidth / worldSizeMinesOne * (index + 1) - 1 + (index < remainder ? index + 1 : remainder);
     return res;
 }
 
@@ -313,10 +313,6 @@ void collision(Grid *pg) {
     }
 }
 
-void initializeGrid(const int worldSize, int *gridWidth) {
-    *gridWidth = minimumRowCount(sizeof(Cell), worldSize - 1, 100 * 1024 * 1024);
-}
-
 double generateNormalizedRandom() { return rand() / (double) RAND_MAX; }
 
 /**
@@ -395,6 +391,18 @@ void saveSnapshots(MacroData *snapshots, int width, int snapshotIndex) {
     fclose(file);
 }
 
+void
+initializeSimulationParameters(char **argv, const int worldSize, double *speed, double *relaxationTime, int *totalTime,
+                               int *snapshotRate, int *gridWidth) {
+    sscanf(argv[1], "%lf", speed);
+    sscanf(argv[2], "%lf", relaxationTime);
+    sscanf(argv[3], "%i", totalTime);
+    sscanf(argv[4], "%i", snapshotRate);
+    sscanf(argv[5], "%i", gridWidth);
+
+    *gridWidth = minimumRowCount(sizeof(Cell), worldSize - 1, 100 * 1024 * 1024); // 100мб на каждый вычислитель
+}
+
 int main(int argc, char *argv[]) {
 
     int rank, worldSize, gridWidth, totalTime, snapshotRate;
@@ -404,11 +412,9 @@ int main(int argc, char *argv[]) {
     MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    initializeGrid(worldSize, &gridWidth);
-
-
-
-    //Служебные данные для передачи снепшотов
+    initializeSimulationParameters(argv, worldSize, &speed, &relaxationTime, &totalTime, &snapshotRate, &gridWidth);
+    // Служебные данные
+    // для передачи снепшотов
     auto *snapshotSizes = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
     auto *snapshotOffsets = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
     for (int nonMasterNode = 1; nonMasterNode < worldSize; ++nonMasterNode) {
