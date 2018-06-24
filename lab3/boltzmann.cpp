@@ -1,7 +1,7 @@
 #include <mpi.h>
-#include <stdlib.h>
-#include <math.h>
-#include <stdio.h>
+#include <cstdlib>
+#include <cmath>
+#include <cstdio>
 #include <memory.h>
 
 #define LATTICE_DIRECTIONS 9
@@ -40,116 +40,6 @@ typedef struct {
     int first;
     int last;
 } RowBounds;
-
-void sumVectors(double *first, double *second, double *result);
-
-void multiplyVector(double *vector, double multiplier, double *result);
-
-double modulusOfVector(double *vector);
-
-double scalarMultiplication(double *first, double *second);
-
-double cosBetweenVectors(double *first, double *second);
-
-RowBounds getMyBounds(int gridWidth, int computationalProcessorsCount, int index);
-
-double calculateDensity(double *particleDistribution);
-
-void calculateVelocity(double *particleDistribution, double macroscopicDensity, double latticeSpeed, double *result);
-
-void initializeSimulationParameters(const int argc, char **argv,
-                                    const int worldSize,
-                                    double *speed, double *relaxationTime, int *totalTime, int *snapshotRate,
-                                    int *gridWidth);
-
-void initializeGrid(Grid *pg, int gridSize, RowBounds bounds, double latticeSpeed, double relaxationTime);
-
-void getSnapshot(Grid *pg, MacroData *snapshot);
-
-void saveSnapshots(MacroData *snapshots, int width, int snapshotIndex);
-
-void streaming(Grid *pg, int rank, int worldSize);
-
-void collision(Grid *pg);
-
-int main(int argc, char *argv[]) {
-
-    int rank, worldSize, gridWidth, totalTime, snapshotRate;
-    double speed, relaxationTime;
-
-    MPI_Init(&argc, &argv);
-    MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
-//    if (worldSize < 2) {
-//        printf("world is too small");
-//        exit(1);
-//    }
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-    initializeSimulationParameters(argc, argv, worldSize, &speed, &relaxationTime, &totalTime, &snapshotRate,
-                                   &gridWidth);
-
-    Grid grid;
-    int isMaster = rank == 0;
-
-    if (isMaster) {
-        printf("World size = %d\n", worldSize);
-        printf("speed = %lf\n", speed);
-        printf("relaxationTime = %lf\n", relaxationTime);
-        printf("totalTime = %d\n", totalTime);
-        printf("snapshotRate = %d\n", snapshotRate);
-        printf("gridWidth = %d\n", gridWidth);
-        printf("size in MB is = %ld\n", (long) (sizeof(Cell) * gridWidth * gridWidth / 1024 / 1024));
-        printf("size of Cell = %d Grid=%d\n", (int) sizeof(Cell), (int) sizeof(Grid));
-    }
-
-    //Служебные данные для передачи снепшотов
-    int *snapshotSizes = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
-    int *snapshotOffsets = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
-    for (int nonMasterNode = 1; nonMasterNode < worldSize; ++nonMasterNode) {
-        RowBounds bounds = getMyBounds(gridWidth, worldSize - 1, nonMasterNode - 1);
-        snapshotSizes[nonMasterNode] = (bounds.last - bounds.first + 1) * gridWidth * sizeof(MacroData);
-        snapshotOffsets[nonMasterNode] = bounds.first * gridWidth * sizeof(MacroData);
-    }
-
-    if (!isMaster) {
-        RowBounds rowBounds = getMyBounds(gridWidth, worldSize - 1, rank - 1);
-        initializeGrid(&grid, gridWidth, rowBounds, speed, relaxationTime);
-    }
-    MacroData *snapshot;
-    if (isMaster) {
-        snapshot = static_cast<MacroData *>(calloc((size_t) gridWidth * gridWidth, sizeof(MacroData)));
-    } else {
-        snapshot = static_cast<MacroData *>(calloc((size_t) grid.height * grid.width, sizeof(MacroData)));
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-    double timeBefore = MPI_Wtime();
-    for (int i = 0; i < totalTime; i++) {
-        if (i % snapshotRate == 0) {
-            if (!isMaster) {
-                getSnapshot(&grid, snapshot);
-            }
-            MPI_Gatherv(snapshot, isMaster ? 0 : grid.width * grid.height * sizeof(MacroData), MPI_BYTE, snapshot,
-                        snapshotSizes, snapshotOffsets, MPI_BYTE, 0, MPI_COMM_WORLD);
-            if (isMaster) {
-                saveSnapshots(snapshot, gridWidth, i / snapshotRate);
-            }
-        }
-        if (!isMaster) {
-            streaming(&grid, rank, worldSize);
-            collision(&grid);
-        }
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-    double timeAfter = MPI_Wtime();
-    if (isMaster) {
-        printf("Algorithm time is %lf", timeAfter - timeBefore);
-    }
-    free(snapshot);
-//    if (!isMaster) {
-//        freeGrid(&grid);
-//    }
-    MPI_Finalize();
-}
 
 void sumVectors(double *first, double *second, double *result) {
     int i;
@@ -230,7 +120,7 @@ void calculateVelocity(double *particleDistribution, double macroscopicDensity, 
  * @param particleDistribution распределение частиц по направлениям
  * @return микроскопическая плотность в точке
  */
-double calculateDensity(double *particleDistribution) {
+double calculateDensity(const double *particleDistribution) {
     double density = 0;
     int direction;
     for (direction = 0; direction < LATTICE_DIRECTIONS; ++direction) {
@@ -425,43 +315,8 @@ void collision(Grid *pg) {
     }
 }
 
-void initializeSimulationParameters(const int argc, char **argv,
-                                    const int worldSize,
-                                    double *speed, double *relaxationTime, int *totalTime, int *snapshotRate,
-                                    int *gridWidth) {
-    if (argc < 5) {
-        printf(
-                "usage: boltzman <lattice-speed>  <relaxation-time>  <simulation-time>  <snapshot-rate> (optional <grid-width>)\n");
-        exit(1);
-    }
-
-    if (sscanf(argv[1], "%lf", speed) != 1) {
-        fprintf(stderr, "speed is not double");
-        exit(1);
-    }
-    if (sscanf(argv[2], "%lf", relaxationTime) != 1) {
-        fprintf(stderr, "relaxation time is not double");
-        exit(1);
-    }
-    if (sscanf(argv[3], "%i", totalTime) != 1) {
-        fprintf(stderr, "simulation time is not integer");
-        exit(1);
-    }
-
-    if (sscanf(argv[4], "%i", snapshotRate) != 1) {
-        fprintf(stderr, "snapshot rate is not integer");
-        exit(1);
-    }
-
-    if (argc == 6) {
-        if (sscanf(argv[5], "%i", gridWidth) != 1) {
-            fprintf(stderr, "grid width is not integer");
-            exit(1);
-        }
-    } else {
-        // 100мб на каждый вычислитель
-        *gridWidth = minimumRowCount(sizeof(Cell), worldSize - 1, 100 * 1024 * 1024);
-    }
+void initializeGrid(const int worldSize, int *gridWidth) {
+    *gridWidth = minimumRowCount(sizeof(Cell), worldSize - 1, 100 * 1024 * 1024);
 }
 
 double generateNormalizedRandom() { return rand() / (double) RAND_MAX; }
@@ -540,4 +395,75 @@ void saveSnapshots(MacroData *snapshots, int width, int snapshotIndex) {
         }
     }
     fclose(file);
+}
+
+int main(int argc, char *argv[]) {
+
+    int rank, worldSize, gridWidth, totalTime, snapshotRate;
+    double speed, relaxationTime;
+
+    MPI_Init(&argc, &argv);
+    MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    initializeGrid(worldSize, &gridWidth);
+
+    Grid grid;
+    int isMaster = rank == 0;
+
+    if (isMaster) {
+        printf("World size = %d\n", worldSize);
+        printf("speed = %lf\n", speed);
+        printf("relaxationTime = %lf\n", relaxationTime);
+        printf("totalTime = %d\n", totalTime);
+        printf("snapshotRate = %d\n", snapshotRate);
+        printf("gridWidth = %d\n", gridWidth);
+        printf("size in MB is = %ld\n", (long) (sizeof(Cell) * gridWidth * gridWidth / 1024 / 1024));
+        printf("size of Cell = %d Grid=%d\n", (int) sizeof(Cell), (int) sizeof(Grid));
+    }
+
+    //Служебные данные для передачи снепшотов
+    int *snapshotSizes = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
+    int *snapshotOffsets = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
+    for (int nonMasterNode = 1; nonMasterNode < worldSize; ++nonMasterNode) {
+        RowBounds bounds = getMyBounds(gridWidth, worldSize - 1, nonMasterNode - 1);
+        snapshotSizes[nonMasterNode] = (bounds.last - bounds.first + 1) * gridWidth * sizeof(MacroData);
+        snapshotOffsets[nonMasterNode] = bounds.first * gridWidth * sizeof(MacroData);
+    }
+
+    if (!isMaster) {
+        RowBounds rowBounds = getMyBounds(gridWidth, worldSize - 1, rank - 1);
+        initializeGrid(&grid, gridWidth, rowBounds, speed, relaxationTime);
+    }
+    MacroData *snapshot;
+    if (isMaster) {
+        snapshot = static_cast<MacroData *>(calloc((size_t) gridWidth * gridWidth, sizeof(MacroData)));
+    } else {
+        snapshot = static_cast<MacroData *>(calloc((size_t) grid.height * grid.width, sizeof(MacroData)));
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    double timeBefore = MPI_Wtime();
+    for (int i = 0; i < totalTime; i++) {
+        if (i % snapshotRate == 0) {
+            if (!isMaster) {
+                getSnapshot(&grid, snapshot);
+            }
+            MPI_Gatherv(snapshot, isMaster ? 0 : grid.width * grid.height * sizeof(MacroData), MPI_BYTE, snapshot,
+                        snapshotSizes, snapshotOffsets, MPI_BYTE, 0, MPI_COMM_WORLD);
+            if (isMaster) {
+                saveSnapshots(snapshot, gridWidth, i / snapshotRate);
+            }
+        }
+        if (!isMaster) {
+            streaming(&grid, rank, worldSize);
+            collision(&grid);
+        }
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    double timeAfter = MPI_Wtime();
+    if (isMaster) {
+        printf("Algorithm time is %lf", timeAfter - timeBefore);
+    }
+    free(snapshot);
+    MPI_Finalize();
 }
