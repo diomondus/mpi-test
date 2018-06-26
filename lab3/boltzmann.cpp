@@ -40,23 +40,23 @@ const double unitVectors[DIRECTIONS][2] = {{0,  0},
                                            {-1, -1},
                                            {1,  -1}}; // вектора скоростей
 
+double vectorModulus(double *vector) {
+    return sqrt(pow(vector[0], 2) + pow(vector[1], 2));
+}
+
 void addVectors(const double *first, const double *second, double *result) {
     for (int i = 0; i < 2; ++i) {
         result[i] = first[i] + second[i];
     }
 }
 
-void mulVector(const double *vector, double multiplier, double *result) {
+void mulVectors(const double *vector, double multiplier, double *result) {
     for (int i = 0; i < 2; ++i) {
         result[i] = vector[i] * multiplier;
     }
 }
 
-double modulusOfVector(double *vector) {
-    return sqrt(pow(vector[0], 2) + pow(vector[1], 2));
-}
-
-double scalarMultiplication(const double *first, const double *second) {
+double scalarMul(const double *first, const double *second) {
     double result = 0;
     for (int i = 0; i < 2; ++i) {
         result += first[i] * second[i];
@@ -65,47 +65,35 @@ double scalarMultiplication(const double *first, const double *second) {
 }
 
 double cosBetweenVectors(double *first, double *second) {
-    return scalarMultiplication(first, second) / (modulusOfVector(first) * modulusOfVector(second));
+    return scalarMul(first, second) / (vectorModulus(first) * vectorModulus(second));
 }
 
 RowLimits getMyLimits(int gridWidth, int worldSizeMinesOne, int index) {
-    int remainder = gridWidth % worldSizeMinesOne;
+    int div = gridWidth % worldSizeMinesOne; //остаток от деления сетки на количество вычислиетелей (остаток сетки)
     RowLimits res;
-    res.first = gridWidth / worldSizeMinesOne * index + (index < remainder ? index : remainder);
-    res.last = gridWidth / worldSizeMinesOne * (index + 1) - 1 + (index < remainder ? index + 1 : remainder);
+    res.first = gridWidth / worldSizeMinesOne * index + (index < div ? index : div);
+    res.last = gridWidth / worldSizeMinesOne * (index + 1) - 1 + (index < div ? index + 1 : div);
     return res;
 }
 
-int minimumRowCount(int dataTypeSizeInBytes, int numberOfComputationalNodes, int minimumSizeOfSystemPerNode) {
-    return (int) ceil((sqrt((minimumSizeOfSystemPerNode * numberOfComputationalNodes) / dataTypeSizeInBytes)));
+int minimumRowCount(int dataTypeSize, int worldSize, int minimumSizePerNode) {
+    return (int) ceil((sqrt((minimumSizePerNode * worldSize) / dataTypeSize)));
 }
 
-/**
- * @param particleDistribution распределение частиц по направлениям
- * @param macroscopicDensity микроскопическая плотность в точке
- * @param latticeSpeed скорость сетки
- * @param result микроскопическая скорость в точке
- */
-void calculateVelocity(double *particleDistribution, double macroscopicDensity, double latticeSpeed, double *result) {
+void calculateMicroVelocityInPoint(double *particleDistribution, double microDensity, double gridSpeed, double *result) {
     double temp[2];
-    int i;
-    for (i = 0; i < 2; ++i) {
+    for (int i = 0; i < 2; ++i) {
         result[i] = 0;
     }
-    int direction;
-    for (direction = 0; direction < DIRECTIONS; ++direction) {
-        mulVector((double *) unitVectors[direction], particleDistribution[direction], temp);
-        mulVector((double *) temp, latticeSpeed, temp);
+    for (int direction = 0; direction < DIRECTIONS; ++direction) {
+        mulVectors((double *) unitVectors[direction], particleDistribution[direction], temp);
+        mulVectors((double *) temp, gridSpeed, temp);
         addVectors(result, temp, result);
     }
-    mulVector(result, 1. / macroscopicDensity, result);
+    mulVectors(result, 1. / microDensity, result);
 }
 
-/**
- * @param directionsDistribution распределение частиц по направлениям
- * @return микроскопическая плотность в точке
- */
-double calculateDensity(const double *directionsDistribution) {
+double calculateMicroDensityInPoint(const double *directionsDistribution) {
     double density = 0;
     for (int direction = 0; direction < DIRECTIONS; ++direction) {
         density += directionsDistribution[direction];
@@ -113,31 +101,16 @@ double calculateDensity(const double *directionsDistribution) {
     return density;
 }
 
-/**
- * @param direction направление
- * @param latticeVelocity скорость сетки
- * @param microVelocity микроскопическая скорость
- * @return Коэффициент для вычисления равновесного распределения по направлениям
- */
-double directionCoeffient(int direction, double latticeVelocity, double *microVelocity) {
-    double eu = scalarMultiplication((double *) unitVectors[direction], microVelocity);
-    double u2 = scalarMultiplication(microVelocity, microVelocity);
-    return 3 * (eu + (3 * pow(eu, 2) - u2) / (latticeVelocity * 2)) / latticeVelocity;
+// Коэффициент для равновесного распределения по направлениям
+double directionCoeffient(int direction, double gridVelocity, double *microVelocity) {
+    double eu = scalarMul((double *) unitVectors[direction], microVelocity);
+    double u2 = scalarMul(microVelocity, microVelocity);
+    return 3 * (eu + (3 * pow(eu, 2) - u2) / (gridVelocity * 2)) / gridVelocity;
 }
 
-
-// частицы по узлам
-
-/**
- * feq[i]=w[i]*ro(1+3/c*(e[i],u)+3/2c^2*(3(e[i],u)^2-(u,u)))
- * @param latticeSpeed скорость сетки
- * @param density микроскопическая плотность
- * @param velocity микроскопическая скорость
- * @param result равновесное распределение по направлениям (OUT)
- */
-void calculateEquilibriumDistribution(double latticeSpeed, double density, double *velocity, double *result) {
+void calculateEquilibriumDistribution(double gridSpeed, double microdensity, double *microvelocity, double *result) {
     for (int direction = 0; direction < DIRECTIONS; ++direction) {
-        result[direction] = (1 + directionCoeffient(direction, latticeSpeed, velocity)) * density * weights[direction];
+        result[direction] = (1 + directionCoeffient(direction, gridSpeed, microvelocity)) * microdensity * weights[direction];
     }
 }
 
@@ -286,10 +259,10 @@ void processCollision(Grid *pg) {
         for (int column = 0; column < pg->width; ++column) {
             Cell *currentNode = &pg->nodes[row][column];
             // плотность.
-            double density = calculateDensity(currentNode->tmp);
+            double density = calculateMicroDensityInPoint(currentNode->tmp);
             // скорость в точке
             double velocity[2];
-            calculateVelocity(currentNode->tmp, density, pg->latticeSpeed, velocity);
+            calculateMicroVelocityInPoint(currentNode->tmp, density, pg->latticeSpeed, velocity);
             double equilibriumDistribution[DIRECTIONS];
             calculateEquilibriumDistribution(pg->latticeSpeed, density, velocity, equilibriumDistribution);
             // новое распределение
@@ -363,9 +336,9 @@ void getState(Grid *pg, MacroData *state) {
         for (int column = 0; column < pg->width; ++column) {
             MacroData *currentState = &state[row * pg->width + column];
             Cell *currentNode = &pg->nodes[row][column];
-            currentState->density = calculateDensity(currentNode->particleDistribution);
-            calculateVelocity(currentNode->particleDistribution, currentState->density, pg->latticeSpeed,
-                              currentState->velocity);
+            currentState->density = calculateMicroDensityInPoint(currentNode->particleDistribution);
+            calculateMicroVelocityInPoint(currentNode->particleDistribution, currentState->density, pg->latticeSpeed,
+                                          currentState->velocity);
         }
     }
 }
