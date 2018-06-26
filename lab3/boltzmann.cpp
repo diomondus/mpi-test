@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <memory.h>
 
-#define DIRECTIONS 9
+#define DIRECTIONS_COUNT 9
 
 typedef struct {
     double density;        // макроскопическая плотность
@@ -12,8 +12,8 @@ typedef struct {
 } MacroData;
 
 typedef struct {
-    double particleDistribution[DIRECTIONS];    // распределения частиц по направлениям
-    double data[DIRECTIONS];
+    double particleDistribution[DIRECTIONS_COUNT];    // распределения частиц по направлениям
+    double data[DIRECTIONS_COUNT];
 } Cell;
 
 typedef struct {
@@ -23,7 +23,7 @@ typedef struct {
 
 typedef struct {
     int height, width;                          // размеры сетки
-    double relaxationTime, latticeSpeed;        // время релаксации и скорость сетки
+    double relaxationTime, gridSpeed;        // время релаксации и скорость сетки
     Cell **nodes;
 } Grid;
 
@@ -52,15 +52,18 @@ void firstRowOrLastColomn(const Grid *grid, const Cell *upperLimit, int hasUpper
 void lastRowOrFirstColumn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
                           const Cell *currentNode, const double *data);
 
-const double unitVectors[DIRECTIONS][2] = {{0,  0},
-                                           {1,  0},
-                                           {0,  1},
-                                           {-1, 0},
-                                           {0,  -1},
-                                           {1,  1},
-                                           {-1, 1},
-                                           {-1, -1},
-                                           {1,  -1}}; // вектора скоростей
+void exchangeAdjacentGridLines(const Grid *localGrid, int rank, int hasUpperLimit, int hasLowerLimit, size_t rowSize,
+                               Cell *&upperLimit, Cell *&lowerLimit);
+
+const double unitVectors[DIRECTIONS_COUNT][2] = {{0,  0},
+                                                 {1,  0},
+                                                 {0,  1},
+                                                 {-1, 0},
+                                                 {0,  -1},
+                                                 {1,  1},
+                                                 {-1, 1},
+                                                 {-1, -1},
+                                                 {1,  -1}}; // вектора скоростей
 
 double vectorModulus(double *vector) {
     return sqrt(pow(vector[0], 2) + pow(vector[1], 2));
@@ -108,7 +111,7 @@ calculateMicroVelocityInPoint(double *particleDistribution, double microDensity,
     for (int i = 0; i < 2; ++i) {
         result[i] = 0;
     }
-    for (int direction = 0; direction < DIRECTIONS; ++direction) {
+    for (int direction = 0; direction < DIRECTIONS_COUNT; ++direction) {
         mulVectors((double *) unitVectors[direction], particleDistribution[direction], temp);
         mulVectors((double *) temp, gridSpeed, temp);
         addVectors(result, temp, result);
@@ -118,7 +121,7 @@ calculateMicroVelocityInPoint(double *particleDistribution, double microDensity,
 
 double calculateMicroDensityInPoint(const double *directionsDistribution) {
     double density = 0;
-    for (int direction = 0; direction < DIRECTIONS; ++direction) {
+    for (int direction = 0; direction < DIRECTIONS_COUNT; ++direction) {
         density += directionsDistribution[direction];
     }
     return density;
@@ -132,19 +135,12 @@ double directionCoeffient(int direction, double gridVelocity, double *microVeloc
 }
 
 void calculateEquilibriumDistribution(double gridSpeed, double microdensity, double *microvelocity, double *result) {
-    for (int direction = 0; direction < DIRECTIONS; ++direction) {
+    for (int direction = 0; direction < DIRECTIONS_COUNT; ++direction) {
         result[direction] =
                 (1 + directionCoeffient(direction, gridSpeed, microvelocity)) * microdensity * weights[direction];
     }
 }
 
-/**
-* @param grid сетка
-* @param upperLimit верхняя граница
-* @param hasUpperLimit есть ли верхняя граница у сетки
-* @param lowerLimit нижняя граница
-* @param hasLowerLimit есть ли нижняя граница у сетки
-*/
 void defineCellData(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, const Cell *lowerLimit,
                     int hasLowerLimit, int nodeRow, int nodeColumn) {
     Cell *currentNode = &grid->nodes[nodeRow][nodeColumn];
@@ -256,22 +252,32 @@ void firstRow(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int n
     }
 }
 
-void streaming(Grid *pg, int rank, int worldSize) {
+void streaming(Grid *localGrid, int rank, int worldSize) {
     int hasUpperLimit = rank != 1;
     int hasLowerLimit = rank != (worldSize - 1);
-    Cell *upperLimit = nullptr, *lowerLimit = nullptr;
-    size_t rowSize = sizeof(Cell) * pg->width;
 
-    //Обмен смежными строками сетки
+    Cell *upperLimit = nullptr, *lowerLimit = nullptr;
+    size_t rowSize = sizeof(Cell) * localGrid->width;
+
+    exchangeAdjacentGridLines(localGrid, rank, hasUpperLimit, hasLowerLimit, rowSize, upperLimit, lowerLimit);
+
+    //обработка распространения
+    for (int row = 0; row < localGrid->height; row++) {
+        for (int column = 0; column < localGrid->width; column++) {
+            defineCellData(localGrid, upperLimit, hasUpperLimit, lowerLimit, hasLowerLimit, row, column);
+        }
+    }
+}
+
+void exchangeAdjacentGridLines(const Grid *localGrid, int rank, int hasUpperLimit, int hasLowerLimit, size_t rowSize,
+                               Cell *&upperLimit, Cell *&lowerLimit) {
     if (hasUpperLimit) {
         upperLimit = static_cast<Cell *>(malloc(rowSize));
-        //Копируем то, что нужно передать
-        memcpy(upperLimit, pg->nodes[0], rowSize);
+        memcpy(upperLimit, localGrid->nodes[0], rowSize);
     }
     if (hasLowerLimit) {
         lowerLimit = static_cast<Cell *>(malloc(rowSize));
-        //Копируем то, что нужно передать
-        memcpy(lowerLimit, pg->nodes[pg->height - 1], rowSize);
+        memcpy(lowerLimit, localGrid->nodes[localGrid->height - 1], rowSize);
     }
     MPI_Status status;
     for (int i = 0; i < 2; ++i) {
@@ -283,29 +289,15 @@ void streaming(Grid *pg, int rank, int worldSize) {
                                  &status);
         }
     }
-
-    //обработка распространения
-    for (int row = 0; row < pg->height; row++) {
-        for (int column = 0; column < pg->width; column++) {
-            defineCellData(pg, upperLimit, hasUpperLimit, lowerLimit, hasLowerLimit, row, column);
-        }
-    }
 }
 
-
-/**
-* @param tempDistribution значение распределения в точке, полученное во время шага Streaming
-* @param equilibriumDistribution равновесное распределение на основе
-* @param relaxationTime время релаксации газа
-* @param result новое распределение частиц
-*/
-void updateDistribution(const double *tempDistribution,
-                        const double *equilibriumDistribution,
-                        double relaxationTime,
-                        double *result) {
-    for (int direction = 0; direction < DIRECTIONS; ++direction) {
-        result[direction] = tempDistribution[direction] +
-                            (equilibriumDistribution[direction] - tempDistribution[direction]) / relaxationTime;
+void getNewParticleDistribution(const double *cellDataDistribution,
+                                const double *equilibriumDistribution,
+                                double relaxationGasTime,
+                                double *result) {
+    for (int direction = 0; direction < DIRECTIONS_COUNT; ++direction) {
+        result[direction] = cellDataDistribution[direction] +
+                            (equilibriumDistribution[direction] - cellDataDistribution[direction]) / relaxationGasTime;
     }
 }
 
@@ -313,16 +305,13 @@ void processCollision(Grid *pg) {
     for (int row = 0; row < pg->height; ++row) {
         for (int column = 0; column < pg->width; ++column) {
             Cell *currentNode = &pg->nodes[row][column];
-            // плотность.
             double density = calculateMicroDensityInPoint(currentNode->data);
-            // скорость в точке
-            double velocity[2];
-            calculateMicroVelocityInPoint(currentNode->data, density, pg->latticeSpeed, velocity);
-            double equilibriumDistribution[DIRECTIONS];
-            calculateEquilibriumDistribution(pg->latticeSpeed, density, velocity, equilibriumDistribution);
-            // новое распределение
-            updateDistribution(currentNode->data, equilibriumDistribution, pg->relaxationTime,
-                               currentNode->particleDistribution);
+            double velocityInPoint[2];
+            calculateMicroVelocityInPoint(currentNode->data, density, pg->gridSpeed, velocityInPoint);
+            double equilibriumDistribution[DIRECTIONS_COUNT];
+            calculateEquilibriumDistribution(pg->gridSpeed, density, velocityInPoint, equilibriumDistribution);
+            getNewParticleDistribution(currentNode->data, equilibriumDistribution, pg->relaxationTime,
+                                       currentNode->particleDistribution);
         }
     }
 }
@@ -345,7 +334,7 @@ void generateParticleDistribution(const double *center, int row, int column, dou
     double perpendicular[2];
     perpendicular[0] = center[1] - column;
     perpendicular[1] = row - center[0];
-    for (int direction = 0; direction < DIRECTIONS; ++direction) {
+    for (int direction = 0; direction < DIRECTIONS_COUNT; ++direction) {
         result[direction] = tangentProjectionCubed(perpendicular, (double *) unitVectors[direction]);
     }
 }
@@ -362,8 +351,8 @@ void initNodes(const Grid *pg, const RowLimits &Limits, const double *center) {
     }
 }
 
-void initializeGrid(Grid *pg, int gridSize, RowLimits Limits, double latticeSpeed, double relaxationTime) {
-    pg->latticeSpeed = latticeSpeed;
+void initializeGrid(Grid *pg, int gridSize, RowLimits Limits, double gridSpeed, double relaxationTime) {
+    pg->gridSpeed = gridSpeed;
     pg->nodes = static_cast<Cell **>(calloc((size_t) pg->height, sizeof(Cell *)));
     pg->height = Limits.last - Limits.first + 1;
     double center[2] = {(gridSize - 1.0) / 2, (gridSize - 1.0) / 2};
@@ -392,7 +381,7 @@ void getState(Grid *pg, MacroData *state) {
             MacroData *currentState = &state[row * pg->width + column];
             Cell *currentNode = &pg->nodes[row][column];
             currentState->density = calculateMicroDensityInPoint(currentNode->particleDistribution);
-            calculateMicroVelocityInPoint(currentNode->particleDistribution, currentState->density, pg->latticeSpeed,
+            calculateMicroVelocityInPoint(currentNode->particleDistribution, currentState->density, pg->gridSpeed,
                                           currentState->velocity);
         }
     }
@@ -412,6 +401,11 @@ void initializeSimulationParameters(char **argv, const int worldSize, double *sp
 int main(int argc, char *argv[]) {
     int rank, worldSize, gridWidth, totalTime, stateRate;
     double speed, relaxationTime;
+
+    MacroData *state;
+    Grid grid;
+
+
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -426,17 +420,16 @@ int main(int argc, char *argv[]) {
         stateOffsets[nonMasterNode] = Limits.first * gridWidth * sizeof(MacroData);
     }
 
-    Grid grid;
     if (rank != 0) {
         RowLimits rowLimits = getMyLimits(gridWidth, worldSize - 1, rank - 1);
         initializeGrid(&grid, gridWidth, rowLimits, speed, relaxationTime);
     }
-    MacroData *state;
     if (rank == 0) {
         state = static_cast<MacroData *>(calloc((size_t) gridWidth * gridWidth, sizeof(MacroData)));
     } else {
         state = static_cast<MacroData *>(calloc((size_t) grid.height * grid.width, sizeof(MacroData)));
     }
+
     MPI_Barrier(MPI_COMM_WORLD);
     double time = MPI_Wtime();
     for (int i = 0; i < totalTime; i++) {
