@@ -4,42 +4,41 @@
 #include <cstdio>
 #include <memory.h>
 
-#define LATTICE_DIRECTIONS 9
-
-// тестовые данные 1 0.8 100 999 100
-
-double weights[] = {4.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 36, 1.0 / 36, 1.0 / 36, 1.0 / 36};
-
-const double elementalVectors[LATTICE_DIRECTIONS][2] = {{0,  0},
-                                                        {1,  0},
-                                                        {0,  1},
-                                                        {-1, 0},
-                                                        {0,  -1},
-                                                        {1,  1},
-                                                        {-1, 1},
-                                                        {-1, -1},
-                                                        {1,  -1}};
+#define DIRECTIONS 9
 
 typedef struct {
-    double density;         //макроскопическая плотность
-    double velocity[2];    //макроскопическая скорость, 0 - горизонтельно, 1 - вертикально
+    double density;        // макроскопическая плотность
+    double velocity[2];    // макроскопическая скорость, 0 - горизонтельно, 1 - вертикально
 } MacroData;
 
 typedef struct {
-    double particleDistribution[LATTICE_DIRECTIONS];        //распределения частиц по направлениям
-    double tmp[LATTICE_DIRECTIONS];
+    double particleDistribution[DIRECTIONS];    // распределения частиц по направлениям
+    double tmp[DIRECTIONS];
 } Cell;
-
-typedef struct {
-    int height, width;                          //размеры сетки
-    double relaxationTime, latticeSpeed;        //время релаксации и скорость сетки
-    Cell **nodes;
-} Grid;
 
 typedef struct {
     int first;
     int last;
 } RowBounds;
+
+typedef struct {
+    int height, width;                          // размеры сетки
+    double relaxationTime, latticeSpeed;        // время релаксации и скорость сетки
+    Cell **nodes;
+} Grid;
+
+double weights[] = {4.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 36, 1.0 / 36, 1.0 / 36,
+                    1.0 / 36}; // весовые коэфф
+
+const double elementalVectors[DIRECTIONS][2] = {{0,  0},
+                                                {1,  0},
+                                                {0,  1},
+                                                {-1, 0},
+                                                {0,  -1},
+                                                {1,  1},
+                                                {-1, 1},
+                                                {-1, -1},
+                                                {1,  -1}}; // вектора скоростей
 
 void addVectors(const double *first, const double *second, double *result) {
     int i;
@@ -94,6 +93,8 @@ int minimumRowCount(int dataTypeSizeInBytes, int numberOfComputationalNodes, int
 void fillTempFieldForNode(const Grid *grid, const Cell *upperBound, int hasUpperBound, const Cell *lowerBound,
                           int hasLowerBound, int row, int column);
 
+void initNodes(const Grid *pg, const RowBounds &bounds, const double *center);
+
 /**
  * @param particleDistribution распределение частиц по направлениям
  * @param macroscopicDensity микроскопическая плотность в точке
@@ -107,7 +108,7 @@ void calculateVelocity(double *particleDistribution, double macroscopicDensity, 
         result[i] = 0;
     }
     int direction;
-    for (direction = 0; direction < LATTICE_DIRECTIONS; ++direction) {
+    for (direction = 0; direction < DIRECTIONS; ++direction) {
         mulVector((double *) elementalVectors[direction], particleDistribution[direction], temp);
         mulVector((double *) temp, latticeSpeed, temp);
         addVectors(result, temp, result);
@@ -116,29 +117,31 @@ void calculateVelocity(double *particleDistribution, double macroscopicDensity, 
 }
 
 /**
- * @param particleDistribution распределение частиц по направлениям
+ * @param directionsDistribution распределение частиц по направлениям
  * @return микроскопическая плотность в точке
  */
-double calculateDensity(const double *particleDistribution) {
+double calculateDensity(const double *directionsDistribution) {
     double density = 0;
-    int direction;
-    for (direction = 0; direction < LATTICE_DIRECTIONS; ++direction) {
-        density += particleDistribution[direction];
+    for (int direction = 0; direction < DIRECTIONS; ++direction) {
+        density += directionsDistribution[direction];
     }
     return density;
 }
 
 /**
  * @param direction направление
- * @param c скорость сетки
- * @param velocity микроскопическая скорость
+ * @param latticeVelocity скорость сетки
+ * @param microVelocity микроскопическая скорость
  * @return Коэффициент для вычисления равновесного распределения по направлениям
  */
-double s(int direction, double c, double *velocity) {
-    double eu = scalarMultiplication((double *) elementalVectors[direction], velocity);
-    double u2 = scalarMultiplication(velocity, velocity);
-    return 3 * (eu + (3 * pow(eu, 2) - u2) / (c * 2)) / c;
+double directionCoeffient(int direction, double latticeVelocity, double *microVelocity) {
+    double eu = scalarMultiplication((double *) elementalVectors[direction], microVelocity);
+    double u2 = scalarMultiplication(microVelocity, microVelocity);
+    return 3 * (eu + (3 * pow(eu, 2) - u2) / (latticeVelocity * 2)) / latticeVelocity;
 }
+
+
+// частицы по узлам
 
 /**
  * feq[i]=w[i]*ro(1+3/c*(e[i],u)+3/2c^2*(3(e[i],u)^2-(u,u)))
@@ -148,9 +151,8 @@ double s(int direction, double c, double *velocity) {
  * @param result равновесное распределение по направлениям (OUT)
  */
 void calculateEquilibriumDistribution(double latticeSpeed, double density, double *velocity, double *result) {
-    int direction;
-    for (direction = 0; direction < LATTICE_DIRECTIONS; ++direction) {
-        result[direction] = (1 + s(direction, latticeSpeed, velocity)) * density * weights[direction];
+    for (int direction = 0; direction < DIRECTIONS; ++direction) {
+        result[direction] = (1 + directionCoeffient(direction, latticeSpeed, velocity)) * density * weights[direction];
     }
 }
 
@@ -288,7 +290,7 @@ void updateDistribution(const double *tempDistribution,
                         const double *equilibriumDistribution,
                         double relaxationTime,
                         double *result) {
-    for (int direction = 0; direction < LATTICE_DIRECTIONS; ++direction) {
+    for (int direction = 0; direction < DIRECTIONS; ++direction) {
         result[direction] = tempDistribution[direction] +
                             (equilibriumDistribution[direction] - tempDistribution[direction]) / relaxationTime;
     }
@@ -304,7 +306,7 @@ void collision(Grid *pg) {
             // скорость в точке
             double velocity[2];
             calculateVelocity(currentNode->tmp, density, pg->latticeSpeed, velocity);
-            double equilibriumDistribution[LATTICE_DIRECTIONS];
+            double equilibriumDistribution[DIRECTIONS];
             calculateEquilibriumDistribution(pg->latticeSpeed, density, velocity, equilibriumDistribution);
             // новое распределение
             updateDistribution(currentNode->tmp, equilibriumDistribution, pg->relaxationTime,
@@ -339,22 +341,23 @@ void generateTwisterData(const double *centerOfGrid, int row, int column, double
     perpendicular[0] = centerOfGrid[1] - column;
     perpendicular[1] = row - centerOfGrid[0];
     int direction;
-    for (direction = 0; direction < LATTICE_DIRECTIONS; ++direction) {
+    for (direction = 0; direction < DIRECTIONS; ++direction) {
         result[direction] = tangentProjectionCubed(perpendicular, (double *) elementalVectors[direction]);
     }
 }
 
 void initializeGrid(Grid *pg, int gridSize, RowBounds bounds, double latticeSpeed, double relaxationTime) {
-    double centerOfGrid = (gridSize - 1.) / 2;
-    //инициализация решётки
-    double center[2] = {centerOfGrid, centerOfGrid};
-    pg->width = gridSize;
-    pg->height = bounds.last - bounds.first + 1;
-    pg->nodes = static_cast<Cell **>(calloc((size_t) pg->height, sizeof(Cell *)));
     pg->latticeSpeed = latticeSpeed;
+    pg->nodes = static_cast<Cell **>(calloc((size_t) pg->height, sizeof(Cell *)));
+    pg->height = bounds.last - bounds.first + 1;
+    double center[2] = {(gridSize - 1.0) / 2, (gridSize - 1.0) / 2};
+    pg->width = gridSize;
     pg->relaxationTime = relaxationTime;
-    int row;
-    for (row = 0; row < pg->height; ++row) {
+    initNodes(pg, bounds, center);
+}
+
+void initNodes(const Grid *pg, const RowBounds &bounds, const double *center) {
+    for (int row = 0; row < pg->height; ++row) {
         pg->nodes[row] = static_cast<Cell *>(calloc((size_t) pg->width, sizeof(Cell)));
         int column;
         for (column = 0; column < pg->width; ++column) {
@@ -364,63 +367,60 @@ void initializeGrid(Grid *pg, int gridSize, RowBounds bounds, double latticeSpee
     }
 }
 
-void getSnapshot(Grid *pg, MacroData *snapshot) {
+void getState(Grid *pg, MacroData *state) {
     for (int row = 0; row < pg->height; ++row) {
         for (int column = 0; column < pg->width; ++column) {
-            MacroData *currentSnapshot = &snapshot[row * pg->width + column];
+            MacroData *currentState = &state[row * pg->width + column];
             Cell *currentNode = &pg->nodes[row][column];
-            currentSnapshot->density = calculateDensity(currentNode->particleDistribution);
-            calculateVelocity(currentNode->particleDistribution, currentSnapshot->density, pg->latticeSpeed,
-                              currentSnapshot->velocity);
+            currentState->density = calculateDensity(currentNode->particleDistribution);
+            calculateVelocity(currentNode->particleDistribution, currentState->density, pg->latticeSpeed,
+                              currentState->velocity);
         }
     }
 }
 
-void saveSnapshots(MacroData *snapshots, int width, int snapshotIndex) {
-    //сохранение снимков
+void saveState(MacroData *macrodata, int width, int index) {
     char fileName[30];
-    sprintf(fileName, "snapshot%d.csv", snapshotIndex);
+    sprintf(fileName, "state%d.csv", index);
     FILE *file = fopen(fileName, "w");
     fprintf(file, "x,y,Vx,Vy,p\n");
     for (int row = 0; row < width; ++row) {
         for (int column = 0; column < width; ++column) {
-            MacroData *macro = &snapshots[row * width + column];
+            MacroData *macro = &macrodata[row * width + column];
             fprintf(file, "%d,%d,%f,%f,%f\n", row, column, macro->velocity[0], macro->velocity[1], macro->density);
         }
     }
     fclose(file);
 }
 
-void
-initializeSimulationParameters(char **argv, const int worldSize, double *speed, double *relaxationTime, int *totalTime,
-                               int *snapshotRate, int *gridWidth) {
+// тестовые данные 1 0.8 100 999 100
+void initializeSimulationParameters(char **argv, const int worldSize, double *speed, double *relaxationTime,
+                                    int *totalTime, int *stateRate, int *gridWidth) {
     sscanf(argv[1], "%lf", speed);
     sscanf(argv[2], "%lf", relaxationTime);
     sscanf(argv[3], "%i", totalTime);
-    sscanf(argv[4], "%i", snapshotRate);
+    sscanf(argv[4], "%i", stateRate);
     sscanf(argv[5], "%i", gridWidth);
-
     *gridWidth = minimumRowCount(sizeof(Cell), worldSize - 1, 100 * 1024 * 1024); // 100мб на каждый вычислитель
 }
 
 int main(int argc, char *argv[]) {
 
-    int rank, worldSize, gridWidth, totalTime, snapshotRate;
+    int rank, worldSize, gridWidth, totalTime, stateRate;
     double speed, relaxationTime;
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    initializeSimulationParameters(argv, worldSize, &speed, &relaxationTime, &totalTime, &snapshotRate, &gridWidth);
-    // Служебные данные
-    // для передачи снепшотов
-    auto *snapshotSizes = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
-    auto *snapshotOffsets = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
+    initializeSimulationParameters(argv, worldSize, &speed, &relaxationTime, &totalTime, &stateRate, &gridWidth);
+    // Служебные данные для передачи состояний
+    auto *stateSizes = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
+    auto *stateOffsets = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
     for (int nonMasterNode = 1; nonMasterNode < worldSize; ++nonMasterNode) {
         RowBounds bounds = getMyBounds(gridWidth, worldSize - 1, nonMasterNode - 1);
-        snapshotSizes[nonMasterNode] = (bounds.last - bounds.first + 1) * gridWidth * sizeof(MacroData);
-        snapshotOffsets[nonMasterNode] = bounds.first * gridWidth * sizeof(MacroData);
+        stateSizes[nonMasterNode] = (bounds.last - bounds.first + 1) * gridWidth * sizeof(MacroData);
+        stateOffsets[nonMasterNode] = bounds.first * gridWidth * sizeof(MacroData);
     }
 
     Grid grid;
@@ -428,23 +428,23 @@ int main(int argc, char *argv[]) {
         RowBounds rowBounds = getMyBounds(gridWidth, worldSize - 1, rank - 1);
         initializeGrid(&grid, gridWidth, rowBounds, speed, relaxationTime);
     }
-    MacroData *snapshot;
+    MacroData *state;
     if (rank == 0) {
-        snapshot = static_cast<MacroData *>(calloc((size_t) gridWidth * gridWidth, sizeof(MacroData)));
+        state = static_cast<MacroData *>(calloc((size_t) gridWidth * gridWidth, sizeof(MacroData)));
     } else {
-        snapshot = static_cast<MacroData *>(calloc((size_t) grid.height * grid.width, sizeof(MacroData)));
+        state = static_cast<MacroData *>(calloc((size_t) grid.height * grid.width, sizeof(MacroData)));
     }
     MPI_Barrier(MPI_COMM_WORLD);
-    double timeBefore = MPI_Wtime();
+    double time = MPI_Wtime();
     for (int i = 0; i < totalTime; i++) {
-        if (i % snapshotRate == 0) {
+        if (i % stateRate == 0) {
             if (rank != 0) {
-                getSnapshot(&grid, snapshot);
+                getState(&grid, state);
             }
-            MPI_Gatherv(snapshot, rank == 0 ? 0 : grid.width * grid.height * sizeof(MacroData), MPI_BYTE, snapshot,
-                        snapshotSizes, snapshotOffsets, MPI_BYTE, 0, MPI_COMM_WORLD);
+            MPI_Gatherv(state, rank == 0 ? 0 : grid.width * grid.height * sizeof(MacroData), MPI_BYTE, state,
+                        stateSizes, stateOffsets, MPI_BYTE, 0, MPI_COMM_WORLD);
             if (rank == 0) {
-                saveSnapshots(snapshot, gridWidth, i / snapshotRate);
+                saveState(state, gridWidth, i / stateRate);
             }
         }
         if (rank != 0) {
@@ -453,10 +453,9 @@ int main(int argc, char *argv[]) {
         }
     }
     MPI_Barrier(MPI_COMM_WORLD);
-    double timeAfter = MPI_Wtime();
     if (rank == 0) {
-        printf("Algorithm time is %lf", timeAfter - timeBefore);
+        printf("Algorithm time is %lf", MPI_Wtime() - time);
     }
-    free(snapshot);
+    free(state);
     MPI_Finalize();
 }
