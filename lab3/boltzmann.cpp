@@ -12,7 +12,7 @@ typedef struct {
 } MacroData;
 
 typedef struct {
-    double particleDistribution[DIRECTIONS_COUNT];    // распределения частиц по направлениям
+    double particleDistribution[DIRECTIONS_COUNT];
     double data[DIRECTIONS_COUNT];
 } Cell;
 
@@ -22,7 +22,7 @@ typedef struct {
 } RowLimits;
 
 typedef struct {
-    int height, width;                          // размеры сетки
+    int height, width;                       // высота и ширина сетки
     double relaxationTime, gridSpeed;        // время релаксации и скорость сетки
     Cell **nodes;
 } Grid;
@@ -276,16 +276,16 @@ void getNewParticleDistribution(const double *cellDataDistribution,
     }
 }
 
-void processCollision(Grid *pg) {
-    for (int row = 0; row < pg->height; ++row) {
-        for (int column = 0; column < pg->width; ++column) {
-            Cell *currentNode = &pg->nodes[row][column];
+void processCollision(Grid *grid) {
+    for (int row = 0; row < grid->height; ++row) {
+        for (int column = 0; column < grid->width; ++column) {
+            Cell *currentNode = &grid->nodes[row][column];
             double density = calculateMicroDensityInPoint(currentNode->data);
             double velocityInPoint[2];
-            calculateMicroVelocityInPoint(currentNode->data, density, pg->gridSpeed, velocityInPoint);
+            calculateMicroVelocityInPoint(currentNode->data, density, grid->gridSpeed, velocityInPoint);
             double equilibriumDistribution[DIRECTIONS_COUNT];
-            calculateEquilibriumDistribution(pg->gridSpeed, density, velocityInPoint, equilibriumDistribution);
-            getNewParticleDistribution(currentNode->data, equilibriumDistribution, pg->relaxationTime,
+            calculateEquilibriumDistribution(grid->gridSpeed, density, velocityInPoint, equilibriumDistribution);
+            getNewParticleDistribution(currentNode->data, equilibriumDistribution, grid->relaxationTime,
                                        currentNode->particleDistribution);
         }
     }
@@ -314,26 +314,26 @@ void generateParticleDistribution(const double *center, int row, int column, dou
     }
 }
 
-void initNodes(const Grid *pg, const RowLimits &Limits, const double *center) {
-    for (int row = 0; row < pg->height; ++row) {
-        pg->nodes[row] = static_cast<Cell *>(calloc((size_t) pg->width, sizeof(Cell)));
+void initNodes(const Grid *grid, const RowLimits &Limits, const double *center) {
+    for (int row = 0; row < grid->height; ++row) {
+        grid->nodes[row] = static_cast<Cell *>(calloc((size_t) grid->width, sizeof(Cell)));
         int column;
-        for (column = 0; column < pg->width; ++column) {
-            Cell *currentNode = &pg->nodes[row][column];
+        for (column = 0; column < grid->width; ++column) {
+            Cell *currentNode = &grid->nodes[row][column];
             generateParticleDistribution(center, Limits.first + row, column,
                                          currentNode->particleDistribution);
         }
     }
 }
 
-void initializeGrid(Grid *pg, int gridSize, RowLimits Limits, double gridSpeed, double relaxationTime) {
-    pg->gridSpeed = gridSpeed;
-    pg->nodes = static_cast<Cell **>(calloc((size_t) pg->height, sizeof(Cell *)));
-    pg->height = Limits.last - Limits.first + 1;
+void initializeGrid(Grid *grid, int gridSize, RowLimits Limits, double gridSpeed, double relaxationTime) {
+    grid->gridSpeed = gridSpeed;
+    grid->nodes = static_cast<Cell **>(calloc((size_t) grid->height, sizeof(Cell *)));
+    grid->height = Limits.last - Limits.first + 1;
     double center[2] = {(gridSize - 1.0) / 2, (gridSize - 1.0) / 2};
-    pg->width = gridSize;
-    pg->relaxationTime = relaxationTime;
-    initNodes(pg, Limits, center);
+    grid->width = gridSize;
+    grid->relaxationTime = relaxationTime;
+    initNodes(grid, Limits, center);
 }
 
 void saveState(MacroData *macrodata, int width, int index) {
@@ -350,13 +350,13 @@ void saveState(MacroData *macrodata, int width, int index) {
     fclose(file);
 }
 
-void getState(Grid *pg, MacroData *state) {
-    for (int row = 0; row < pg->height; ++row) {
-        for (int column = 0; column < pg->width; ++column) {
-            MacroData *currentState = &state[row * pg->width + column];
-            Cell *currentNode = &pg->nodes[row][column];
+void getState(Grid *grid, MacroData *state) {
+    for (int row = 0; row < grid->height; ++row) {
+        for (int column = 0; column < grid->width; ++column) {
+            MacroData *currentState = &state[row * grid->width + column];
+            Cell *currentNode = &grid->nodes[row][column];
             currentState->density = calculateMicroDensityInPoint(currentNode->particleDistribution);
-            calculateMicroVelocityInPoint(currentNode->particleDistribution, currentState->density, pg->gridSpeed,
+            calculateMicroVelocityInPoint(currentNode->particleDistribution, currentState->density, grid->gridSpeed,
                                           currentState->velocity);
         }
     }
