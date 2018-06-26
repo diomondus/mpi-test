@@ -13,7 +13,7 @@ typedef struct {
 
 typedef struct {
     double particleDistribution[DIRECTIONS];    // распределения частиц по направлениям
-    double tmp[DIRECTIONS];
+    double data[DIRECTIONS];
 } Cell;
 
 typedef struct {
@@ -29,6 +29,28 @@ typedef struct {
 
 double weights[] = {4.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 36, 1.0 / 36, 1.0 / 36,
                     1.0 / 36}; // весовые коэффициенты
+
+void firstRow(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
+              const Cell *currentNode, const double *data);
+
+void firstColumn(const Grid *grid, int nodeRow, int nodeColumn, const Cell *currentNode, const double *data);
+
+void lastRow(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
+             const Cell *currentNode, const double *data);
+
+void lastColumn(const Grid *grid, int nodeRow, int nodeColumn, const Cell *currentNode, const double *data);
+
+void firstRowOrColomn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
+                      const Cell *currentNode, const double *data);
+
+void lastRowOrColomn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
+                     const Cell *currentNode, const double *data);
+
+void firstRowOrLastColomn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
+                          const Cell *currentNode, const double *data);
+
+void lastRowOrFirstColumn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
+                          const Cell *currentNode, const double *data);
 
 const double unitVectors[DIRECTIONS][2] = {{0,  0},
                                            {1,  0},
@@ -80,7 +102,8 @@ int minimumRowCount(int dataTypeSize, int worldSize, int minimumSizePerNode) {
     return (int) ceil((sqrt((minimumSizePerNode * worldSize) / dataTypeSize)));
 }
 
-void calculateMicroVelocityInPoint(double *particleDistribution, double microDensity, double gridSpeed, double *result) {
+void
+calculateMicroVelocityInPoint(double *particleDistribution, double microDensity, double gridSpeed, double *result) {
     double temp[2];
     for (int i = 0; i < 2; ++i) {
         result[i] = 0;
@@ -110,93 +133,126 @@ double directionCoeffient(int direction, double gridVelocity, double *microVeloc
 
 void calculateEquilibriumDistribution(double gridSpeed, double microdensity, double *microvelocity, double *result) {
     for (int direction = 0; direction < DIRECTIONS; ++direction) {
-        result[direction] = (1 + directionCoeffient(direction, gridSpeed, microvelocity)) * microdensity * weights[direction];
+        result[direction] =
+                (1 + directionCoeffient(direction, gridSpeed, microvelocity)) * microdensity * weights[direction];
     }
 }
 
 /**
-* Заполняет поле tmp в ноде сетки
 * @param grid сетка
 * @param upperLimit верхняя граница
 * @param hasUpperLimit есть ли верхняя граница у сетки
 * @param lowerLimit нижняя граница
 * @param hasLowerLimit есть ли нижняя граница у сетки
 */
-void fillTempFieldForNode(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, const Cell *lowerLimit,
-                          int hasLowerLimit, int nodeRow, int nodeColumn) {
+void defineCellData(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, const Cell *lowerLimit,
+                    int hasLowerLimit, int nodeRow, int nodeColumn) {
     Cell *currentNode = &grid->nodes[nodeRow][nodeColumn];
-    double *tmp = currentNode->tmp;
-    tmp[0] = currentNode->particleDistribution[0];
+    double *data = currentNode->data;
+    data[0] = currentNode->particleDistribution[0];
 
-    int firstRow = nodeRow == 0;
-    int firstColumn = nodeColumn == 0;
-    int lastRow = nodeRow == grid->height - 1;
-    int lastColumn = nodeColumn == grid->width - 1;
+    firstRow(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
+    firstColumn(grid, nodeRow, nodeColumn, currentNode, data);
+    lastRow(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
+    lastColumn(grid, nodeRow, nodeColumn, currentNode, data);
+    firstRowOrColomn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
+    lastRowOrColomn(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
+    firstRowOrLastColomn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
+    lastRowOrFirstColumn(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
+}
 
-    if (firstRow) {
-        if (hasUpperLimit) {
-            tmp[4] = upperLimit[nodeColumn].particleDistribution[4];
+void lastRowOrFirstColumn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
+                          const Cell *currentNode, double *data) {
+    if (nodeRow == grid->height - 1 || nodeColumn == 0) {
+        if (nodeColumn != 0 && hasLowerLimit) {
+            data[5] = lowerLimit[nodeColumn - 1].particleDistribution[5];
         } else {
-            tmp[4] = currentNode->particleDistribution[2];
+            data[5] = currentNode->particleDistribution[7];
         }
     } else {
-        tmp[4] = grid->nodes[nodeRow - 1][nodeColumn].particleDistribution[4];
+        data[5] = grid->nodes[nodeRow + 1][nodeColumn - 1].particleDistribution[5];
     }
-    if (firstColumn) {
-        tmp[1] = currentNode->particleDistribution[3];
+}
+
+void firstRowOrLastColomn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
+                          const Cell *currentNode, double *data) {
+    if (nodeRow == 0 || nodeColumn == grid->width - 1) {
+        if (nodeColumn != grid->width - 1 && hasUpperLimit) {
+            data[7] = upperLimit[nodeColumn + 1].particleDistribution[7];
+        } else {
+            data[7] = currentNode->particleDistribution[5];
+        }
     } else {
-        tmp[1] = grid->nodes[nodeRow][nodeColumn - 1].particleDistribution[1];
+        data[7] = grid->nodes[nodeRow - 1][nodeColumn + 1].particleDistribution[7];
     }
-    if (lastRow) {
+}
+
+void lastRowOrColomn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
+                     const Cell *currentNode, double *data) {
+    if (nodeRow == grid->height - 1 || nodeColumn == grid->width - 1) {
+        if (nodeColumn != grid->width - 1 && hasLowerLimit) {
+            data[6] = lowerLimit[nodeColumn + 1].particleDistribution[6];
+        } else {
+            data[6] = currentNode->particleDistribution[8];
+        }
+    } else {
+        data[6] = grid->nodes[nodeRow + 1][nodeColumn + 1].particleDistribution[6];
+    }
+}
+
+void firstRowOrColomn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
+                      const Cell *currentNode, double *data) {
+    if (nodeRow == 0 || nodeColumn == 0) {
+        if (nodeColumn != 0 && hasUpperLimit) {
+            data[8] = upperLimit[nodeColumn - 1].particleDistribution[8];
+
+        } else {
+            data[8] = currentNode->particleDistribution[6];
+        }
+    } else {
+        data[8] = grid->nodes[nodeRow - 1][nodeColumn - 1].particleDistribution[8];
+    }
+}
+
+void lastColumn(const Grid *grid, int nodeRow, int nodeColumn, const Cell *currentNode, double *data) {
+    if (nodeColumn == grid->width - 1) {
+        data[3] = currentNode->particleDistribution[1];
+    } else {
+        data[3] = grid->nodes[nodeRow][nodeColumn + 1].particleDistribution[3];
+    }
+}
+
+void lastRow(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
+             const Cell *currentNode, double *data) {
+    if (nodeRow == grid->height - 1) {
         if (hasLowerLimit) {
-            tmp[2] = lowerLimit[nodeColumn].particleDistribution[2];
+            data[2] = lowerLimit[nodeColumn].particleDistribution[2];
         } else {
-            tmp[2] = currentNode->particleDistribution[4];
+            data[2] = currentNode->particleDistribution[4];
         }
     } else {
-        tmp[2] = grid->nodes[nodeRow + 1][nodeColumn].particleDistribution[2];
+        data[2] = grid->nodes[nodeRow + 1][nodeColumn].particleDistribution[2];
     }
-    if (lastColumn) {
-        tmp[3] = currentNode->particleDistribution[1];
-    } else {
-        tmp[3] = grid->nodes[nodeRow][nodeColumn + 1].particleDistribution[3];
-    }
-    if (firstRow || firstColumn) {
-        if (!firstColumn && hasUpperLimit) {
-            tmp[8] = upperLimit[nodeColumn - 1].particleDistribution[8];
+}
 
-        } else {
-            tmp[8] = currentNode->particleDistribution[6];
-        }
+void firstColumn(const Grid *grid, int nodeRow, int nodeColumn, const Cell *currentNode, double *data) {
+    if (nodeColumn == 0) {
+        data[1] = currentNode->particleDistribution[3];
     } else {
-        tmp[8] = grid->nodes[nodeRow - 1][nodeColumn - 1].particleDistribution[8];
+        data[1] = grid->nodes[nodeRow][nodeColumn - 1].particleDistribution[1];
     }
-    if (lastRow || lastColumn) {
-        if (!lastColumn && hasLowerLimit) {
-            tmp[6] = lowerLimit[nodeColumn + 1].particleDistribution[6];
+}
+
+void firstRow(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
+              const Cell *currentNode, double *data) {
+    if (nodeRow == 0) {
+        if (hasUpperLimit) {
+            data[4] = upperLimit[nodeColumn].particleDistribution[4];
         } else {
-            tmp[6] = currentNode->particleDistribution[8];
+            data[4] = currentNode->particleDistribution[2];
         }
     } else {
-        tmp[6] = grid->nodes[nodeRow + 1][nodeColumn + 1].particleDistribution[6];
-    }
-    if (firstRow || lastColumn) {
-        if (!lastColumn && hasUpperLimit) {
-            tmp[7] = upperLimit[nodeColumn + 1].particleDistribution[7];
-        } else {
-            tmp[7] = currentNode->particleDistribution[5];
-        }
-    } else {
-        tmp[7] = grid->nodes[nodeRow - 1][nodeColumn + 1].particleDistribution[7];
-    }
-    if (lastRow || firstColumn) {
-        if (!firstColumn && hasLowerLimit) {
-            tmp[5] = lowerLimit[nodeColumn - 1].particleDistribution[5];
-        } else {
-            tmp[5] = currentNode->particleDistribution[7];
-        }
-    } else {
-        tmp[5] = grid->nodes[nodeRow + 1][nodeColumn - 1].particleDistribution[5];
+        data[4] = grid->nodes[nodeRow - 1][nodeColumn].particleDistribution[4];
     }
 }
 
@@ -231,11 +287,10 @@ void streaming(Grid *pg, int rank, int worldSize) {
     //обработка распространения
     for (int row = 0; row < pg->height; row++) {
         for (int column = 0; column < pg->width; column++) {
-            fillTempFieldForNode(pg, upperLimit, hasUpperLimit, lowerLimit, hasLowerLimit, row, column);
+            defineCellData(pg, upperLimit, hasUpperLimit, lowerLimit, hasLowerLimit, row, column);
         }
     }
 }
-
 
 
 /**
@@ -259,14 +314,14 @@ void processCollision(Grid *pg) {
         for (int column = 0; column < pg->width; ++column) {
             Cell *currentNode = &pg->nodes[row][column];
             // плотность.
-            double density = calculateMicroDensityInPoint(currentNode->tmp);
+            double density = calculateMicroDensityInPoint(currentNode->data);
             // скорость в точке
             double velocity[2];
-            calculateMicroVelocityInPoint(currentNode->tmp, density, pg->latticeSpeed, velocity);
+            calculateMicroVelocityInPoint(currentNode->data, density, pg->latticeSpeed, velocity);
             double equilibriumDistribution[DIRECTIONS];
             calculateEquilibriumDistribution(pg->latticeSpeed, density, velocity, equilibriumDistribution);
             // новое распределение
-            updateDistribution(currentNode->tmp, equilibriumDistribution, pg->relaxationTime,
+            updateDistribution(currentNode->data, equilibriumDistribution, pg->relaxationTime,
                                currentNode->particleDistribution);
         }
     }
