@@ -69,7 +69,7 @@ double cosBetweenVectors(double *first, double *second) {
 }
 
 RowLimits getMyLimits(int gridWidth, int worldSizeMinesOne, int index) {
-    int div = gridWidth % worldSizeMinesOne; //остаток от деления сетки на количество вычислиетелей (остаток сетки)
+    int div = gridWidth % worldSizeMinesOne; //остаток от деления сетки на количество вычислителей (остаток сетки)
     RowLimits res;
     res.first = gridWidth / worldSizeMinesOne * index + (index < div ? index : div);
     res.last = gridWidth / worldSizeMinesOne * (index + 1) - 1 + (index < div ? index + 1 : div);
@@ -129,7 +129,7 @@ void lastRowOrFirstColumn(const Grid *grid, const Cell *lowerLimit, int hasLower
     }
 }
 
-void firstRowOrLastColomn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
+void firstRowOrLastColumn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
                           const Cell *currentNode, double *data) {
     if (nodeRow == 0 || nodeColumn == grid->width - 1) {
         if (nodeColumn != grid->width - 1 && hasUpperLimit) {
@@ -142,7 +142,7 @@ void firstRowOrLastColomn(const Grid *grid, const Cell *upperLimit, int hasUpper
     }
 }
 
-void lastRowOrColomn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
+void lastRowOrColumn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
                      const Cell *currentNode, double *data) {
     if (nodeRow == grid->height - 1 || nodeColumn == grid->width - 1) {
         if (nodeColumn != grid->width - 1 && hasLowerLimit) {
@@ -155,7 +155,7 @@ void lastRowOrColomn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit
     }
 }
 
-void firstRowOrColomn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
+void firstRowOrColumn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
                       const Cell *currentNode, double *data) {
     if (nodeRow == 0 || nodeColumn == 0) {
         if (nodeColumn != 0 && hasUpperLimit) {
@@ -221,9 +221,9 @@ void defineCellData(const Grid *grid, const Cell *upperLimit, int hasUpperLimit,
     firstColumn(grid, nodeRow, nodeColumn, currentNode, data);
     lastRow(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
     lastColumn(grid, nodeRow, nodeColumn, currentNode, data);
-    firstRowOrColomn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
-    lastRowOrColomn(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
-    firstRowOrLastColomn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
+    firstRowOrColumn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
+    lastRowOrColumn(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
+    firstRowOrLastColumn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
     lastRowOrFirstColumn(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
 }
 
