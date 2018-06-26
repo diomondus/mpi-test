@@ -19,7 +19,7 @@ typedef struct {
 typedef struct {
     int first;
     int last;
-} RowBounds;
+} RowLimits;
 
 typedef struct {
     int height, width;                          // размеры сетки
@@ -28,28 +28,26 @@ typedef struct {
 } Grid;
 
 double weights[] = {4.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 36, 1.0 / 36, 1.0 / 36,
-                    1.0 / 36}; // весовые коэфф
+                    1.0 / 36}; // весовые коэффициенты
 
-const double elementalVectors[DIRECTIONS][2] = {{0,  0},
-                                                {1,  0},
-                                                {0,  1},
-                                                {-1, 0},
-                                                {0,  -1},
-                                                {1,  1},
-                                                {-1, 1},
-                                                {-1, -1},
-                                                {1,  -1}}; // вектора скоростей
+const double unitVectors[DIRECTIONS][2] = {{0,  0},
+                                           {1,  0},
+                                           {0,  1},
+                                           {-1, 0},
+                                           {0,  -1},
+                                           {1,  1},
+                                           {-1, 1},
+                                           {-1, -1},
+                                           {1,  -1}}; // вектора скоростей
 
 void addVectors(const double *first, const double *second, double *result) {
-    int i;
-    for (i = 0; i < 2; ++i) {
+    for (int i = 0; i < 2; ++i) {
         result[i] = first[i] + second[i];
     }
 }
 
 void mulVector(const double *vector, double multiplier, double *result) {
-    int i;
-    for (i = 0; i < 2; ++i) {
+    for (int i = 0; i < 2; ++i) {
         result[i] = vector[i] * multiplier;
     }
 }
@@ -60,8 +58,7 @@ double modulusOfVector(double *vector) {
 
 double scalarMultiplication(const double *first, const double *second) {
     double result = 0;
-    int i;
-    for (i = 0; i < 2; ++i) {
+    for (int i = 0; i < 2; ++i) {
         result += first[i] * second[i];
     }
     return result;
@@ -71,29 +68,17 @@ double cosBetweenVectors(double *first, double *second) {
     return scalarMultiplication(first, second) / (modulusOfVector(first) * modulusOfVector(second));
 }
 
-/**
-* @param gridWidth ширина квадратной сетки
-* @param worldSizeMinesOne количество вычислитетей
-* @param index номер вычислителя начиная с 0
-* @return Индексы первой и последней строк в сетке.
-*/
-RowBounds getMyBounds(int gridWidth, int worldSizeMinesOne, int index) {
+RowLimits getMyLimits(int gridWidth, int worldSizeMinesOne, int index) {
     int remainder = gridWidth % worldSizeMinesOne;
-    RowBounds res;
+    RowLimits res;
     res.first = gridWidth / worldSizeMinesOne * index + (index < remainder ? index : remainder);
     res.last = gridWidth / worldSizeMinesOne * (index + 1) - 1 + (index < remainder ? index + 1 : remainder);
     return res;
 }
 
 int minimumRowCount(int dataTypeSizeInBytes, int numberOfComputationalNodes, int minimumSizeOfSystemPerNode) {
-    return (int) ceil((sqrt((minimumSizeOfSystemPerNode * numberOfComputationalNodes)
-                            / dataTypeSizeInBytes)));
+    return (int) ceil((sqrt((minimumSizeOfSystemPerNode * numberOfComputationalNodes) / dataTypeSizeInBytes)));
 }
-
-void fillTempFieldForNode(const Grid *grid, const Cell *upperBound, int hasUpperBound, const Cell *lowerBound,
-                          int hasLowerBound, int row, int column);
-
-void initNodes(const Grid *pg, const RowBounds &bounds, const double *center);
 
 /**
  * @param particleDistribution распределение частиц по направлениям
@@ -109,7 +94,7 @@ void calculateVelocity(double *particleDistribution, double macroscopicDensity, 
     }
     int direction;
     for (direction = 0; direction < DIRECTIONS; ++direction) {
-        mulVector((double *) elementalVectors[direction], particleDistribution[direction], temp);
+        mulVector((double *) unitVectors[direction], particleDistribution[direction], temp);
         mulVector((double *) temp, latticeSpeed, temp);
         addVectors(result, temp, result);
     }
@@ -135,7 +120,7 @@ double calculateDensity(const double *directionsDistribution) {
  * @return Коэффициент для вычисления равновесного распределения по направлениям
  */
 double directionCoeffient(int direction, double latticeVelocity, double *microVelocity) {
-    double eu = scalarMultiplication((double *) elementalVectors[direction], microVelocity);
+    double eu = scalarMultiplication((double *) unitVectors[direction], microVelocity);
     double u2 = scalarMultiplication(microVelocity, microVelocity);
     return 3 * (eu + (3 * pow(eu, 2) - u2) / (latticeVelocity * 2)) / latticeVelocity;
 }
@@ -156,30 +141,116 @@ void calculateEquilibriumDistribution(double latticeSpeed, double density, doubl
     }
 }
 
+/**
+* Заполняет поле tmp в ноде сетки
+* @param grid сетка
+* @param upperLimit верхняя граница
+* @param hasUpperLimit есть ли верхняя граница у сетки
+* @param lowerLimit нижняя граница
+* @param hasLowerLimit есть ли нижняя граница у сетки
+*/
+void fillTempFieldForNode(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, const Cell *lowerLimit,
+                          int hasLowerLimit, int nodeRow, int nodeColumn) {
+    Cell *currentNode = &grid->nodes[nodeRow][nodeColumn];
+    double *tmp = currentNode->tmp;
+    tmp[0] = currentNode->particleDistribution[0];
+
+    int firstRow = nodeRow == 0;
+    int firstColumn = nodeColumn == 0;
+    int lastRow = nodeRow == grid->height - 1;
+    int lastColumn = nodeColumn == grid->width - 1;
+
+    if (firstRow) {
+        if (hasUpperLimit) {
+            tmp[4] = upperLimit[nodeColumn].particleDistribution[4];
+        } else {
+            tmp[4] = currentNode->particleDistribution[2];
+        }
+    } else {
+        tmp[4] = grid->nodes[nodeRow - 1][nodeColumn].particleDistribution[4];
+    }
+    if (firstColumn) {
+        tmp[1] = currentNode->particleDistribution[3];
+    } else {
+        tmp[1] = grid->nodes[nodeRow][nodeColumn - 1].particleDistribution[1];
+    }
+    if (lastRow) {
+        if (hasLowerLimit) {
+            tmp[2] = lowerLimit[nodeColumn].particleDistribution[2];
+        } else {
+            tmp[2] = currentNode->particleDistribution[4];
+        }
+    } else {
+        tmp[2] = grid->nodes[nodeRow + 1][nodeColumn].particleDistribution[2];
+    }
+    if (lastColumn) {
+        tmp[3] = currentNode->particleDistribution[1];
+    } else {
+        tmp[3] = grid->nodes[nodeRow][nodeColumn + 1].particleDistribution[3];
+    }
+    if (firstRow || firstColumn) {
+        if (!firstColumn && hasUpperLimit) {
+            tmp[8] = upperLimit[nodeColumn - 1].particleDistribution[8];
+
+        } else {
+            tmp[8] = currentNode->particleDistribution[6];
+        }
+    } else {
+        tmp[8] = grid->nodes[nodeRow - 1][nodeColumn - 1].particleDistribution[8];
+    }
+    if (lastRow || lastColumn) {
+        if (!lastColumn && hasLowerLimit) {
+            tmp[6] = lowerLimit[nodeColumn + 1].particleDistribution[6];
+        } else {
+            tmp[6] = currentNode->particleDistribution[8];
+        }
+    } else {
+        tmp[6] = grid->nodes[nodeRow + 1][nodeColumn + 1].particleDistribution[6];
+    }
+    if (firstRow || lastColumn) {
+        if (!lastColumn && hasUpperLimit) {
+            tmp[7] = upperLimit[nodeColumn + 1].particleDistribution[7];
+        } else {
+            tmp[7] = currentNode->particleDistribution[5];
+        }
+    } else {
+        tmp[7] = grid->nodes[nodeRow - 1][nodeColumn + 1].particleDistribution[7];
+    }
+    if (lastRow || firstColumn) {
+        if (!firstColumn && hasLowerLimit) {
+            tmp[5] = lowerLimit[nodeColumn - 1].particleDistribution[5];
+        } else {
+            tmp[5] = currentNode->particleDistribution[7];
+        }
+    } else {
+        tmp[5] = grid->nodes[nodeRow + 1][nodeColumn - 1].particleDistribution[5];
+    }
+}
+
 void streaming(Grid *pg, int rank, int worldSize) {
-    int hasUpperBound = rank != 1;
-    int hasLowerBound = rank != (worldSize - 1);
-    Cell *upperBound = nullptr, *lowerBound = nullptr;
+    int hasUpperLimit = rank != 1;
+    int hasLowerLimit = rank != (worldSize - 1);
+    Cell *upperLimit = nullptr, *lowerLimit = nullptr;
     size_t rowSize = sizeof(Cell) * pg->width;
 
     //Обмен смежными строками сетки
-    if (hasUpperBound) {
-        upperBound = static_cast<Cell *>(malloc(rowSize));
+    if (hasUpperLimit) {
+        upperLimit = static_cast<Cell *>(malloc(rowSize));
         //Копируем то, что нужно передать
-        memcpy(upperBound, pg->nodes[0], rowSize);
+        memcpy(upperLimit, pg->nodes[0], rowSize);
     }
-    if (hasLowerBound) {
-        lowerBound = static_cast<Cell *>(malloc(rowSize));
+    if (hasLowerLimit) {
+        lowerLimit = static_cast<Cell *>(malloc(rowSize));
         //Копируем то, что нужно передать
-        memcpy(lowerBound, pg->nodes[pg->height - 1], rowSize);
+        memcpy(lowerLimit, pg->nodes[pg->height - 1], rowSize);
     }
     MPI_Status status;
     for (int i = 0; i < 2; ++i) {
-        if (hasLowerBound && (rank % 2 == i)) {
-            MPI_Sendrecv_replace(lowerBound, (int) rowSize, MPI_BYTE, rank + 1, 0, rank + 1, 0, MPI_COMM_WORLD,
+        if (hasLowerLimit && (rank % 2 == i)) {
+            MPI_Sendrecv_replace(lowerLimit, (int) rowSize, MPI_BYTE, rank + 1, 0, rank + 1, 0, MPI_COMM_WORLD,
                                  &status);
-        } else if (hasUpperBound & (rank % 2 != i)) {
-            MPI_Sendrecv_replace(upperBound, (int) rowSize, MPI_BYTE, rank - 1, 0, rank - 1, 0, MPI_COMM_WORLD,
+        } else if (hasUpperLimit & (rank % 2 != i)) {
+            MPI_Sendrecv_replace(upperLimit, (int) rowSize, MPI_BYTE, rank - 1, 0, rank - 1, 0, MPI_COMM_WORLD,
                                  &status);
         }
     }
@@ -187,98 +258,12 @@ void streaming(Grid *pg, int rank, int worldSize) {
     //обработка распространения
     for (int row = 0; row < pg->height; row++) {
         for (int column = 0; column < pg->width; column++) {
-            fillTempFieldForNode(pg, upperBound, hasUpperBound, lowerBound, hasLowerBound, row, column);
+            fillTempFieldForNode(pg, upperLimit, hasUpperLimit, lowerLimit, hasLowerLimit, row, column);
         }
     }
 }
 
-/**
-* Заполняет поле tmp в ноде сетки
-* @param grid сетка
-* @param upperBound верхняя граница
-* @param hasUpperBound есть ли верхняя граница у сетки
-* @param lowerBound нижняя граница
-* @param hasLowerBound есть ли нижняя граница у сетки
-* @param row строка ноды
-* @param column столбец ноды
-*/
-void fillTempFieldForNode(const Grid *grid, const Cell *upperBound, int hasUpperBound, const Cell *lowerBound,
-                          int hasLowerBound, int row, int column) {
-    Cell *currentNode = &grid->nodes[row][column];
-    double *tmp = currentNode->tmp;
-    tmp[0] = currentNode->particleDistribution[0];
 
-    int firstRow = row == 0;
-    int firstColumn = column == 0;
-    int lastRow = row == grid->height - 1;
-    int lastColumn = column == grid->width - 1;
-
-    if (firstRow) {
-        if (hasUpperBound) {
-            tmp[4] = upperBound[column].particleDistribution[4];
-        } else {
-            tmp[4] = currentNode->particleDistribution[2];
-        }
-    } else {
-        tmp[4] = grid->nodes[row - 1][column].particleDistribution[4];
-    }
-    if (firstColumn) {
-        tmp[1] = currentNode->particleDistribution[3];
-    } else {
-        tmp[1] = grid->nodes[row][column - 1].particleDistribution[1];
-    }
-    if (lastRow) {
-        if (hasLowerBound) {
-            tmp[2] = lowerBound[column].particleDistribution[2];
-        } else {
-            tmp[2] = currentNode->particleDistribution[4];
-        }
-    } else {
-        tmp[2] = grid->nodes[row + 1][column].particleDistribution[2];
-    }
-    if (lastColumn) {
-        tmp[3] = currentNode->particleDistribution[1];
-    } else {
-        tmp[3] = grid->nodes[row][column + 1].particleDistribution[3];
-    }
-    if (firstRow || firstColumn) {
-        if (!firstColumn && hasUpperBound) {
-            tmp[8] = upperBound[column - 1].particleDistribution[8];
-
-        } else {
-            tmp[8] = currentNode->particleDistribution[6];
-        }
-    } else {
-        tmp[8] = grid->nodes[row - 1][column - 1].particleDistribution[8];
-    }
-    if (lastRow || lastColumn) {
-        if (!lastColumn && hasLowerBound) {
-            tmp[6] = lowerBound[column + 1].particleDistribution[6];
-        } else {
-            tmp[6] = currentNode->particleDistribution[8];
-        }
-    } else {
-        tmp[6] = grid->nodes[row + 1][column + 1].particleDistribution[6];
-    }
-    if (firstRow || lastColumn) {
-        if (!lastColumn && hasUpperBound) {
-            tmp[7] = upperBound[column + 1].particleDistribution[7];
-        } else {
-            tmp[7] = currentNode->particleDistribution[5];
-        }
-    } else {
-        tmp[7] = grid->nodes[row - 1][column + 1].particleDistribution[7];
-    }
-    if (lastRow || firstColumn) {
-        if (!firstColumn && hasLowerBound) {
-            tmp[5] = lowerBound[column - 1].particleDistribution[5];
-        } else {
-            tmp[5] = currentNode->particleDistribution[7];
-        }
-    } else {
-        tmp[5] = grid->nodes[row + 1][column - 1].particleDistribution[5];
-    }
-}
 
 /**
 * @param tempDistribution значение распределения в точке, полученное во время шага Streaming
@@ -296,8 +281,7 @@ void updateDistribution(const double *tempDistribution,
     }
 }
 
-void collision(Grid *pg) {
-    //обработка столкновений
+void processCollision(Grid *pg) {
     for (int row = 0; row < pg->height; ++row) {
         for (int column = 0; column < pg->width; ++column) {
             Cell *currentNode = &pg->nodes[row][column];
@@ -329,54 +313,35 @@ double tangentProjectionCubed(double *from, double *to) {
     return cos > 0 ? cos : generateNormalizedRandom() / 20;
 }
 
-/**
- * Генерирует распределение частиц по направлениям в точке для формирования воронки.
- * @param centerOfGrid центр воронки
- * @param row строка
- * @param column столбец
- * @param result распределение частиц по направлениям в данной точке.
- */
-void generateTwisterData(const double *centerOfGrid, int row, int column, double *result) {
+void generateParticleDistribution(const double *center, int row, int column, double *result) {
     double perpendicular[2];
-    perpendicular[0] = centerOfGrid[1] - column;
-    perpendicular[1] = row - centerOfGrid[0];
-    int direction;
-    for (direction = 0; direction < DIRECTIONS; ++direction) {
-        result[direction] = tangentProjectionCubed(perpendicular, (double *) elementalVectors[direction]);
+    perpendicular[0] = center[1] - column;
+    perpendicular[1] = row - center[0];
+    for (int direction = 0; direction < DIRECTIONS; ++direction) {
+        result[direction] = tangentProjectionCubed(perpendicular, (double *) unitVectors[direction]);
     }
 }
 
-void initializeGrid(Grid *pg, int gridSize, RowBounds bounds, double latticeSpeed, double relaxationTime) {
-    pg->latticeSpeed = latticeSpeed;
-    pg->nodes = static_cast<Cell **>(calloc((size_t) pg->height, sizeof(Cell *)));
-    pg->height = bounds.last - bounds.first + 1;
-    double center[2] = {(gridSize - 1.0) / 2, (gridSize - 1.0) / 2};
-    pg->width = gridSize;
-    pg->relaxationTime = relaxationTime;
-    initNodes(pg, bounds, center);
-}
-
-void initNodes(const Grid *pg, const RowBounds &bounds, const double *center) {
+void initNodes(const Grid *pg, const RowLimits &Limits, const double *center) {
     for (int row = 0; row < pg->height; ++row) {
         pg->nodes[row] = static_cast<Cell *>(calloc((size_t) pg->width, sizeof(Cell)));
         int column;
         for (column = 0; column < pg->width; ++column) {
             Cell *currentNode = &pg->nodes[row][column];
-            generateTwisterData(center, bounds.first + row, column, currentNode->particleDistribution);
+            generateParticleDistribution(center, Limits.first + row, column,
+                                         currentNode->particleDistribution);
         }
     }
 }
 
-void getState(Grid *pg, MacroData *state) {
-    for (int row = 0; row < pg->height; ++row) {
-        for (int column = 0; column < pg->width; ++column) {
-            MacroData *currentState = &state[row * pg->width + column];
-            Cell *currentNode = &pg->nodes[row][column];
-            currentState->density = calculateDensity(currentNode->particleDistribution);
-            calculateVelocity(currentNode->particleDistribution, currentState->density, pg->latticeSpeed,
-                              currentState->velocity);
-        }
-    }
+void initializeGrid(Grid *pg, int gridSize, RowLimits Limits, double latticeSpeed, double relaxationTime) {
+    pg->latticeSpeed = latticeSpeed;
+    pg->nodes = static_cast<Cell **>(calloc((size_t) pg->height, sizeof(Cell *)));
+    pg->height = Limits.last - Limits.first + 1;
+    double center[2] = {(gridSize - 1.0) / 2, (gridSize - 1.0) / 2};
+    pg->width = gridSize;
+    pg->relaxationTime = relaxationTime;
+    initNodes(pg, Limits, center);
 }
 
 void saveState(MacroData *macrodata, int width, int index) {
@@ -393,6 +358,18 @@ void saveState(MacroData *macrodata, int width, int index) {
     fclose(file);
 }
 
+void getState(Grid *pg, MacroData *state) {
+    for (int row = 0; row < pg->height; ++row) {
+        for (int column = 0; column < pg->width; ++column) {
+            MacroData *currentState = &state[row * pg->width + column];
+            Cell *currentNode = &pg->nodes[row][column];
+            currentState->density = calculateDensity(currentNode->particleDistribution);
+            calculateVelocity(currentNode->particleDistribution, currentState->density, pg->latticeSpeed,
+                              currentState->velocity);
+        }
+    }
+}
+
 // тестовые данные 1 0.8 100 999 100
 void initializeSimulationParameters(char **argv, const int worldSize, double *speed, double *relaxationTime,
                                     int *totalTime, int *stateRate, int *gridWidth) {
@@ -405,10 +382,8 @@ void initializeSimulationParameters(char **argv, const int worldSize, double *sp
 }
 
 int main(int argc, char *argv[]) {
-
     int rank, worldSize, gridWidth, totalTime, stateRate;
     double speed, relaxationTime;
-
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -418,15 +393,15 @@ int main(int argc, char *argv[]) {
     auto *stateSizes = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
     auto *stateOffsets = static_cast<int *>(calloc((size_t) worldSize, sizeof(int)));
     for (int nonMasterNode = 1; nonMasterNode < worldSize; ++nonMasterNode) {
-        RowBounds bounds = getMyBounds(gridWidth, worldSize - 1, nonMasterNode - 1);
-        stateSizes[nonMasterNode] = (bounds.last - bounds.first + 1) * gridWidth * sizeof(MacroData);
-        stateOffsets[nonMasterNode] = bounds.first * gridWidth * sizeof(MacroData);
+        RowLimits Limits = getMyLimits(gridWidth, worldSize - 1, nonMasterNode - 1);
+        stateSizes[nonMasterNode] = (Limits.last - Limits.first + 1) * gridWidth * sizeof(MacroData);
+        stateOffsets[nonMasterNode] = Limits.first * gridWidth * sizeof(MacroData);
     }
 
     Grid grid;
     if (rank != 0) {
-        RowBounds rowBounds = getMyBounds(gridWidth, worldSize - 1, rank - 1);
-        initializeGrid(&grid, gridWidth, rowBounds, speed, relaxationTime);
+        RowLimits rowLimits = getMyLimits(gridWidth, worldSize - 1, rank - 1);
+        initializeGrid(&grid, gridWidth, rowLimits, speed, relaxationTime);
     }
     MacroData *state;
     if (rank == 0) {
@@ -449,12 +424,12 @@ int main(int argc, char *argv[]) {
         }
         if (rank != 0) {
             streaming(&grid, rank, worldSize);
-            collision(&grid);
+            processCollision(&grid);
         }
     }
     MPI_Barrier(MPI_COMM_WORLD);
     if (rank == 0) {
-        printf("Algorithm time is %lf", MPI_Wtime() - time);
+        printf("time %lf", MPI_Wtime() - time);
     }
     free(state);
     MPI_Finalize();
