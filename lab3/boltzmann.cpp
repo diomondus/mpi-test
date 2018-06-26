@@ -30,31 +30,6 @@ typedef struct {
 double weights[] = {4.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 9, 1.0 / 36, 1.0 / 36, 1.0 / 36,
                     1.0 / 36}; // весовые коэффициенты
 
-void firstRow(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
-              const Cell *currentNode, const double *data);
-
-void firstColumn(const Grid *grid, int nodeRow, int nodeColumn, const Cell *currentNode, const double *data);
-
-void lastRow(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
-             const Cell *currentNode, const double *data);
-
-void lastColumn(const Grid *grid, int nodeRow, int nodeColumn, const Cell *currentNode, const double *data);
-
-void firstRowOrColomn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
-                      const Cell *currentNode, const double *data);
-
-void lastRowOrColomn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
-                     const Cell *currentNode, const double *data);
-
-void firstRowOrLastColomn(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int nodeRow, int nodeColumn,
-                          const Cell *currentNode, const double *data);
-
-void lastRowOrFirstColumn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
-                          const Cell *currentNode, const double *data);
-
-void exchangeAdjacentGridLines(const Grid *localGrid, int rank, int hasUpperLimit, int hasLowerLimit, size_t rowSize,
-                               Cell *&upperLimit, Cell *&lowerLimit);
-
 const double unitVectors[DIRECTIONS_COUNT][2] = {{0,  0},
                                                  {1,  0},
                                                  {0,  1},
@@ -139,22 +114,6 @@ void calculateEquilibriumDistribution(double gridSpeed, double microdensity, dou
         result[direction] =
                 (1 + directionCoeffient(direction, gridSpeed, microvelocity)) * microdensity * weights[direction];
     }
-}
-
-void defineCellData(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, const Cell *lowerLimit,
-                    int hasLowerLimit, int nodeRow, int nodeColumn) {
-    Cell *currentNode = &grid->nodes[nodeRow][nodeColumn];
-    double *data = currentNode->data;
-    data[0] = currentNode->particleDistribution[0];
-
-    firstRow(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
-    firstColumn(grid, nodeRow, nodeColumn, currentNode, data);
-    lastRow(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
-    lastColumn(grid, nodeRow, nodeColumn, currentNode, data);
-    firstRowOrColomn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
-    lastRowOrColomn(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
-    firstRowOrLastColomn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
-    lastRowOrFirstColumn(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
 }
 
 void lastRowOrFirstColumn(const Grid *grid, const Cell *lowerLimit, int hasLowerLimit, int nodeRow, int nodeColumn,
@@ -252,21 +211,20 @@ void firstRow(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, int n
     }
 }
 
-void streaming(Grid *localGrid, int rank, int worldSize) {
-    int hasUpperLimit = rank != 1;
-    int hasLowerLimit = rank != (worldSize - 1);
+void defineCellData(const Grid *grid, const Cell *upperLimit, int hasUpperLimit, const Cell *lowerLimit,
+                    int hasLowerLimit, int nodeRow, int nodeColumn) {
+    Cell *currentNode = &grid->nodes[nodeRow][nodeColumn];
+    double *data = currentNode->data;
+    data[0] = currentNode->particleDistribution[0];
 
-    Cell *upperLimit = nullptr, *lowerLimit = nullptr;
-    size_t rowSize = sizeof(Cell) * localGrid->width;
-
-    exchangeAdjacentGridLines(localGrid, rank, hasUpperLimit, hasLowerLimit, rowSize, upperLimit, lowerLimit);
-
-    //обработка распространения
-    for (int row = 0; row < localGrid->height; row++) {
-        for (int column = 0; column < localGrid->width; column++) {
-            defineCellData(localGrid, upperLimit, hasUpperLimit, lowerLimit, hasLowerLimit, row, column);
-        }
-    }
+    firstRow(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
+    firstColumn(grid, nodeRow, nodeColumn, currentNode, data);
+    lastRow(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
+    lastColumn(grid, nodeRow, nodeColumn, currentNode, data);
+    firstRowOrColomn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
+    lastRowOrColomn(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
+    firstRowOrLastColomn(grid, upperLimit, hasUpperLimit, nodeRow, nodeColumn, currentNode, data);
+    lastRowOrFirstColumn(grid, lowerLimit, hasLowerLimit, nodeRow, nodeColumn, currentNode, data);
 }
 
 void exchangeAdjacentGridLines(const Grid *localGrid, int rank, int hasUpperLimit, int hasLowerLimit, size_t rowSize,
@@ -287,6 +245,23 @@ void exchangeAdjacentGridLines(const Grid *localGrid, int rank, int hasUpperLimi
         } else if (hasUpperLimit & (rank % 2 != i)) {
             MPI_Sendrecv_replace(upperLimit, (int) rowSize, MPI_BYTE, rank - 1, 0, rank - 1, 0, MPI_COMM_WORLD,
                                  &status);
+        }
+    }
+}
+
+void streaming(Grid *localGrid, int rank, int worldSize) {
+    int hasUpperLimit = rank != 1;
+    int hasLowerLimit = rank != (worldSize - 1);
+
+    Cell *upperLimit = nullptr, *lowerLimit = nullptr;
+    size_t rowSize = sizeof(Cell) * localGrid->width;
+
+    exchangeAdjacentGridLines(localGrid, rank, hasUpperLimit, hasLowerLimit, rowSize, upperLimit, lowerLimit);
+
+    //обработка распространения
+    for (int row = 0; row < localGrid->height; row++) {
+        for (int column = 0; column < localGrid->width; column++) {
+            defineCellData(localGrid, upperLimit, hasUpperLimit, lowerLimit, hasLowerLimit, row, column);
         }
     }
 }
@@ -404,7 +379,6 @@ int main(int argc, char *argv[]) {
 
     MacroData *state;
     Grid grid;
-
 
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
